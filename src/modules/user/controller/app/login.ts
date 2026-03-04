@@ -8,6 +8,19 @@ import {
 import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { UserLoginService } from '../../service/login';
 import { BaseSysLoginService } from '../../../base/service/sys/login';
+import { Validate } from '@midwayjs/validate';
+import {
+  UserMiniLoginDTO,
+  UserMPLoginDTO,
+  UserWxAppLoginDTO,
+  UserPhoneLoginDTO,
+  UserUniPhoneLoginDTO,
+  UserRefreshTokenDTO,
+  UserCaptchaDTO,
+  UserSmsCodeDTO,
+  UserSmsCodeVerifyDTO,
+  UserPasswordLoginDTO,
+} from '../../dto/login';
 
 /**
  * 登录
@@ -23,47 +36,47 @@ export class AppUserLoginController extends BaseController {
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/mini', { summary: '小程序登录' })
-  async mini(@Body() body) {
-    const { code, encryptedData, iv } = body;
-    return this.ok(await this.userLoginService.mini(code, encryptedData, iv));
+  @Validate()
+  async mini(@Body() body: UserMiniLoginDTO) {
+    return this.ok(await this.userLoginService.mini(body.code, body.encryptedData, body.iv));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/mp', { summary: '公众号登录' })
-  async mp(@Body('code') code: string) {
-    return this.ok(await this.userLoginService.mp(code));
+  @Validate()
+  async mp(@Body() body: UserMPLoginDTO) {
+    return this.ok(await this.userLoginService.mp(body.code));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/wxApp', { summary: '微信APP授权登录' })
-  async app(@Body('code') code: string) {
-    return this.ok(await this.userLoginService.wxApp(code));
+  @Validate()
+  async app(@Body() body: UserWxAppLoginDTO) {
+    return this.ok(await this.userLoginService.wxApp(body.code));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/phone', { summary: '手机号登录' })
-  async phone(@Body('phone') phone: string, @Body('smsCode') smsCode: string) {
-    return this.ok(await this.userLoginService.phoneVerifyCode(phone, smsCode));
+  @Validate()
+  async phone(@Body() body: UserPhoneLoginDTO) {
+    return this.ok(await this.userLoginService.phoneVerifyCode(body.phone, body.smsCode));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/uniPhone', { summary: '一键手机号登录' })
-  async uniPhone(
-    @Body('access_token') access_token: string,
-    @Body('openid') openid: string,
-    @Body('appId') appId: string
-  ) {
+  @Validate()
+  async uniPhone(@Body() body: UserUniPhoneLoginDTO) {
     return this.ok(
-      await this.userLoginService.uniPhone(access_token, openid, appId)
+      await this.userLoginService.uniPhone(body.access_token, body.openid, body.appId)
     );
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/miniPhone', { summary: '绑定小程序手机号' })
-  async miniPhone(@Body() body) {
-    const { code, encryptedData, iv } = body;
+  @Validate()
+  async miniPhone(@Body() body: UserMiniLoginDTO) {
     return this.ok(
-      await this.userLoginService.miniPhone(code, encryptedData, iv)
+      await this.userLoginService.miniPhone(body.code, body.encryptedData, body.iv)
     );
   }
 
@@ -81,26 +94,22 @@ export class AppUserLoginController extends BaseController {
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/smsCode', { summary: '验证码' })
-  async smsCode(
-    @Body('phone') phone: string,
-    @Body('captchaId') captchaId: string,
-    @Body('code') code: string
-  ) {
-    return this.ok(await this.userLoginService.smsCode(phone, captchaId, code));
+  @Validate()
+  async smsCode(@Body() body: UserSmsCodeVerifyDTO) {
+    return this.ok(await this.userLoginService.smsCode(body.phone, body.captchaId, body.code));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/refreshToken', { summary: '刷新token' })
-  public async refreshToken(@Body('refreshToken') refreshToken) {
-    return this.ok(await this.userLoginService.refreshToken(refreshToken));
+  @Validate()
+  public async refreshToken(@Body() body: UserRefreshTokenDTO) {
+    return this.ok(await this.userLoginService.refreshToken(body.refreshToken));
   }
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Post('/password', { summary: '密码登录' })
-  async password(
-    @Body('phone') phone: string,
-    @Body('password') password: string
-  ) {
-    return this.ok(await this.userLoginService.password(phone, password));
+  @Validate()
+  async password(@Body() body: UserPasswordLoginDTO) {
+    return this.ok(await this.userLoginService.password(body.phone, body.password));
   }
 }

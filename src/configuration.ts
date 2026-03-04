@@ -13,6 +13,7 @@ import * as validate from '@midwayjs/validate';
 import * as info from '@midwayjs/info';
 import * as staticFile from '@midwayjs/static-file';
 import * as cron from '@midwayjs/cron';
+import * as socketio from '@midwayjs/socketio';
 import * as DefaultConfig from './config/config.default';
 import * as LocalConfig from './config/config.local';
 import * as ProdConfig from './config/config.prod';
@@ -35,6 +36,8 @@ import * as upload from '@midwayjs/upload';
     validate,
     // 本地任务 http://www.midwayjs.org/docs/extensions/cron
     cron,
+    // WebSocket http://www.midwayjs.org/docs/extensions/websocket
+    socketio,
     // 文件上传
     upload,
     // cool-admin 官方组件 https://cool-js.com

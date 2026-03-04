@@ -4,6 +4,8 @@ import { Body, Inject, Post } from '@midwayjs/core';
 import { CoolController, BaseController } from '@cool-midway/core';
 import { InjectEntityModel } from '@midwayjs/typeorm';
 import { Repository } from 'typeorm';
+import { Validate } from '@midwayjs/validate';
+import { DemoGoodsQueryDTO } from '../../dto/goods';
 
 /**
  * 测试
@@ -24,12 +26,14 @@ export class OpenDemoGoodsController extends BaseController {
   demoGoodsService: DemoGoodsService;
 
   @Post('/sqlPage', { summary: 'sql分页查询' })
-  async sqlPage(@Body() query) {
+  @Validate()
+  async sqlPage(@Body() query: DemoGoodsQueryDTO) {
     return this.ok(await this.demoGoodsService.sqlPage(query));
   }
 
   @Post('/entityPage', { summary: 'entity分页查询' })
-  async entityPage(@Body() query) {
+  @Validate()
+  async entityPage(@Body() query: DemoGoodsQueryDTO) {
     return this.ok(await this.demoGoodsService.entityPage(query));
   }
 }

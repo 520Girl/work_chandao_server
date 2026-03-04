@@ -1,7 +1,16 @@
+
 import { CoolController, BaseController } from '@cool-midway/core';
 import { Body, Get, Inject, Post } from '@midwayjs/core';
 import { UserInfoService } from '../../service/info';
 import { UserInfoEntity } from '../../entity/info';
+import { Validate } from '@midwayjs/validate';
+import {
+  UserUpdatePersonDTO,
+  UserUpdatePasswordDTO,
+  UserBindPhoneDTO,
+  UserMiniPhoneDTO,
+} from '../../dto/info';
+import { TeamInfoService } from '../../../team/service/info';
 
 /**
  * 用户信息
@@ -17,24 +26,37 @@ export class AppUserInfoController extends BaseController {
   @Inject()
   userInfoService: UserInfoService;
 
+  @Inject()
+  teamInfoService: TeamInfoService;
+
   @Get('/person', { summary: '获取用户信息' })
   async person() {
     return this.ok(await this.userInfoService.person(this.ctx.user.id));
   }
 
+  @Post('/joinTeam', { summary: '加入团队' })
+  async joinTeam(@Body('teamId') teamId: number, @Body('invitedBy') invitedBy?: number) {
+    return this.ok(
+      await this.teamInfoService.joinTeam(this.ctx.user.id, teamId, invitedBy)
+    );
+  }
+
   @Post('/updatePerson', { summary: '更新用户信息' })
-  async updatePerson(@Body() body) {
+  @Validate()
+  async updatePerson(@Body() body: UserUpdatePersonDTO) {
     return this.ok(
       await this.userInfoService.updatePerson(this.ctx.user.id, body)
     );
   }
 
   @Post('/updatePassword', { summary: '更新用户密码' })
-  async updatePassword(
-    @Body('password') password: string,
-    @Body('code') code: string
-  ) {
-    await this.userInfoService.updatePassword(this.ctx.user.id, password, code);
+  @Validate()
+  async updatePassword(@Body() body: UserUpdatePasswordDTO) {
+    await this.userInfoService.updatePassword(
+      this.ctx.user.id,
+      body.password,
+      body.code
+    );
     return this.ok();
   }
 
@@ -45,13 +67,19 @@ export class AppUserInfoController extends BaseController {
   }
 
   @Post('/bindPhone', { summary: '绑定手机号' })
-  async bindPhone(@Body('phone') phone: string, @Body('code') code: string) {
-    await this.userInfoService.bindPhone(this.ctx.user.id, phone, code);
+  @Validate()
+  async bindPhone(@Body() body: UserBindPhoneDTO) {
+    await this.userInfoService.bindPhone(
+      this.ctx.user.id,
+      body.phone,
+      body.code
+    );
     return this.ok();
   }
 
   @Post('/miniPhone', { summary: '绑定小程序手机号' })
-  async miniPhone(@Body() body) {
+  @Validate()
+  async miniPhone(@Body() body: UserMiniPhoneDTO) {
     const { code, encryptedData, iv } = body;
     return this.ok(
       await this.userInfoService.miniPhone(

@@ -88,4 +88,14 @@ export default {
       softDelete: true,
     },
   } as CoolConfig,
+  // 设备回调
+  device: {
+    secretKey: '3c071ffc69db80367f40060a386de267',
+    soap: {
+      url: 'https://bed.qssmart.cn/CustomerAPIService.asmx',
+      username: 'customerapi',
+      password: 'pA2@G8zQ',
+    },
+    syncInterval: 5000,
+  },
 } as MidwayConfig;

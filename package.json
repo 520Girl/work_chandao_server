@@ -15,6 +15,7 @@
     "@midwayjs/info": "^3.20.3",
     "@midwayjs/koa": "^3.20.3",
     "@midwayjs/logger": "^3.4.2",
+    "@midwayjs/socketio": "3.20.19",
     "@midwayjs/static-file": "^3.20.3",
     "@midwayjs/typeorm": "^3.20.3",
     "@midwayjs/upload": "^3.20.3",
