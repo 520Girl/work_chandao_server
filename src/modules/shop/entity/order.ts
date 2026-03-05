@@ -30,4 +30,13 @@ export class ShopOrderEntity extends BaseEntity {
 
   @Column({ comment: '订单号', unique: true })
   orderNo: string;
+
+  @Column({ comment: '订单价格', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  price: number;
+
+  @Column({ comment: '物流单号', nullable: true })
+  logisticsNo: string;
+
+  @Column({ comment: '备注', nullable: true })
+  remark: string;
 }

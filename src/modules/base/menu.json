@@ -827,7 +827,7 @@
                 "type": 1,
                 "icon": "icon-device",
                 "orderNum": 0,
-                "viewPath": null,
+                "viewPath": "modules/device/views/info.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -1112,7 +1112,7 @@
                 "type": 1,
                 "icon": "icon-data",
                 "orderNum": 1,
-                "viewPath": null,
+                "viewPath": "modules/meditation/views/report.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -1167,10 +1167,10 @@
                 ]
             },
             {
-                "name": "社区动态",
-                "router": "/post/info",
+                "name": "社群管理",
+                "router": null,
                 "perms": null,
-                "type": 1,
+                "type": 0,
                 "icon": "icon-news",
                 "orderNum": 2,
                 "viewPath": null,
@@ -1178,63 +1178,149 @@
                 "isShow": true,
                 "childMenus": [
                     {
-                        "name": "新增",
-                        "router": null,
-                        "perms": "post:info:add",
-                        "type": 2,
-                        "icon": null,
+                        "name": "社群组织",
+                        "router": "/team/info",
+                        "perms": null,
+                        "type": 1,
+                        "icon": "icon-dept",
                         "orderNum": 1,
-                        "viewPath": null,
-                        "keepAlive": false,
+                        "viewPath": "modules/team/views/info.vue",
+                        "keepAlive": true,
                         "isShow": true,
-                        "childMenus": []
+                        "childMenus": [
+                            {
+                                "name": "新增",
+                                "router": null,
+                                "perms": "team:info:add",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 1,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "删除",
+                                "router": null,
+                                "perms": "team:info:delete",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 2,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "修改",
+                                "router": null,
+                                "perms": "team:info:update",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 3,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "查询",
+                                "router": null,
+                                "perms": "team:info:page,team:info:list,team:info:info",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 4,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            }
+                        ]
                     },
                     {
-                        "name": "删除",
-                        "router": null,
-                        "perms": "post:info:delete",
-                        "type": 2,
-                        "icon": null,
+                        "name": "社群动态",
+                        "router": "/post/info",
+                        "perms": null,
+                        "type": 1,
+                        "icon": "icon-news",
                         "orderNum": 2,
-                        "viewPath": null,
-                        "keepAlive": false,
+                        "viewPath": "modules/post/views/info.vue",
+                        "keepAlive": true,
                         "isShow": true,
-                        "childMenus": []
-                    },
-                    {
-                        "name": "修改",
-                        "router": null,
-                        "perms": "post:info:update",
-                        "type": 2,
-                        "icon": null,
-                        "orderNum": 3,
-                        "viewPath": null,
-                        "keepAlive": false,
-                        "isShow": true,
-                        "childMenus": []
-                    },
-                    {
-                        "name": "查询",
-                        "router": null,
-                        "perms": "post:info:page,post:info:list,post:info:info",
-                        "type": 2,
-                        "icon": null,
-                        "orderNum": 4,
-                        "viewPath": null,
-                        "keepAlive": false,
-                        "isShow": true,
-                        "childMenus": []
+                        "childMenus": [
+                            {
+                                "name": "新增",
+                                "router": null,
+                                "perms": "post:info:add",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 1,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "删除",
+                                "router": null,
+                                "perms": "post:info:delete",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 2,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "修改",
+                                "router": null,
+                                "perms": "post:info:update",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 3,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "查询",
+                                "router": null,
+                                "perms": "post:info:page,post:info:list,post:info:info",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 4,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "审核",
+                                "router": null,
+                                "perms": "post:audit",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 5,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            }
+                        ]
                     }
                 ]
             },
             {
                 "name": "活动管理",
-                "router": "/activity/manage",
+                "router": "/activity/info",
                 "perms": null,
                 "type": 1,
                 "icon": "icon-activity",
                 "orderNum": 3,
-                "viewPath": null,
+                "viewPath": "modules/activity/views/info.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -1271,7 +1357,7 @@
                 "type": 1,
                 "icon": "icon-template",
                 "orderNum": 4,
-                "viewPath": null,
+                "viewPath": "modules/activity/views/template.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -1332,7 +1418,7 @@
                 "type": 1,
                 "icon": "icon-goods",
                 "orderNum": 5,
-                "viewPath": null,
+                "viewPath": "modules/shop/views/product.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -1393,7 +1479,7 @@
                 "type": 1,
                 "icon": "icon-order",
                 "orderNum": 6,
-                "viewPath": null,
+                "viewPath": "modules/shop/views/order.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [

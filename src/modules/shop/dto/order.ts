@@ -22,6 +22,12 @@ export class ShopOrderCreateDTO {
    */
   @Rule(RuleType.number().required())
   addressId: number;
+
+  /**
+   * 备注
+   */
+  @Rule(RuleType.string())
+  remark?: string;
 }
 
 /**

@@ -34,6 +34,7 @@ export class AppUserAddressController extends BaseController {
 
   @Get('/default', { summary: '默认地址' })
   async default() {
-    return this.ok(await this.userAddressService.default(this.ctx.user.id));
+    const address = await this.userAddressService.default(this.ctx.user.id);
+    return this.ok({ address });
   }
 }

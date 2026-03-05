@@ -6,6 +6,9 @@ import { ShopOrderService } from '../../service/order';
 import { Validate } from '@midwayjs/validate';
 import { ShopOrderShippedDTO } from '../../dto/admin';
 
+import { ShopProductEntity } from '../../entity/product';
+import { UserAddressEntity } from '../../../user/entity/address';
+
 /**
  * 订单管理
  */
@@ -13,9 +16,22 @@ import { ShopOrderShippedDTO } from '../../dto/admin';
   api: ['add', 'delete', 'update', 'info', 'list', 'page'],
   entity: ShopOrderEntity,
   pageQueryOp: {
-    keyWordLikeFields: ['a.orderNo'],
-    fieldEq: ['a.status'],
-    select: ['a.*', 'b.nickName as buyerName', 'c.nickName as commissionName'],
+    keyWordLikeFields: ['a.orderNo', 'b.nickName', 'd.name'],
+    fieldEq: ['a.status', 'a.userId'],
+    select: [
+      'a.*',
+      'b.nickName as buyerName',
+      'c.nickName as commissionName',
+      'd.name as productName',
+      'd.mainImage as productImage',
+      'd.price as productPrice',
+      'e.contact',
+      'e.phone',
+      'e.province',
+      'e.city',
+      'e.district',
+      'e.address',
+    ],
     join: [
       {
         entity: UserInfoEntity,
@@ -26,6 +42,19 @@ import { ShopOrderShippedDTO } from '../../dto/admin';
         entity: UserInfoEntity,
         alias: 'c',
         condition: 'a.commissionRecipientId = c.id',
+        type: 'leftJoin',
+      },
+      {
+        entity: ShopProductEntity,
+        alias: 'd',
+        condition: 'a.productId = d.id',
+        type: 'leftJoin',
+      },
+      {
+        entity: UserAddressEntity,
+        alias: 'e',
+        condition: 'a.addressId = e.id',
+        type: 'leftJoin',
       },
     ],
   },

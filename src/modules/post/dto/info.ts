@@ -4,7 +4,9 @@ import { Rule, RuleType } from '@midwayjs/validate';
  * 分享报告请求
  * @example
  * {
- *   "reportId": 1
+ *   "reportId": 1,
+ *   "targetTeamId": 2,  // 可选，提交到其他社群时传入，需审核
+ *   "content": "今天的冥想分享" // 可选，自定义文案
  * }
  */
 export class PostShareDTO {
@@ -14,6 +16,20 @@ export class PostShareDTO {
    */
   @Rule(RuleType.number().required())
   reportId: number;
+
+  /**
+   * 自定义分享内容（可选），为空则使用默认文案
+   * @example "今天的冥想分享"
+   */
+  @Rule(RuleType.string().optional().allow(''))
+  content?: string;
+
+  /**
+   * 目标团队ID（可选），提交到其他社群时传入，需管理员审核
+   * @example 2
+   */
+  @Rule(RuleType.number().optional().allow(null))
+  targetTeamId?: number | null;
 }
 
 /**
@@ -21,7 +37,8 @@ export class PostShareDTO {
  * @example
  * {
  *   "content": "今天的冥想分享",
- *   "images": ["https://example.com/image1.jpg"]
+ *   "images": ["https://example.com/image1.jpg"],
+ *   "targetTeamId": 2  // 可选，提交到其他社群时传入，需审核
  * }
  */
 export class PostManualDTO {
@@ -38,6 +55,13 @@ export class PostManualDTO {
    */
   @Rule(RuleType.array())
   images?: string[];
+
+  /**
+   * 目标团队ID（可选），提交到其他社群时传入，需管理员审核
+   * @example 2
+   */
+  @Rule(RuleType.number().optional().allow(null))
+  targetTeamId?: number | null;
 }
 
 /**
