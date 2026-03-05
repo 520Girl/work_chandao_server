@@ -10,7 +10,6 @@ import * as entity7 from './modules/space/entity/type';
 import * as entity8 from './modules/space/entity/info';
 import * as entity9 from './modules/shop/entity/product';
 import * as entity10 from './modules/shop/entity/order';
-import * as entity11 from './modules/shop/entity/address';
 import * as entity12 from './modules/recycle/entity/data';
 import * as entity13 from './modules/post/entity/like';
 import * as entity14 from './modules/post/entity/info';
@@ -51,7 +50,6 @@ export const entities = [
   ...Object.values(entity8),
   ...Object.values(entity9),
   ...Object.values(entity10),
-  ...Object.values(entity11),
   ...Object.values(entity12),
   ...Object.values(entity13),
   ...Object.values(entity14),

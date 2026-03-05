@@ -10,6 +10,10 @@ export class ActivityInfoEntity extends BaseEntity {
   @Column({ comment: '模板ID' })
   templateId: number;
 
+  @Index()
+  @Column({ comment: '团队ID', nullable: true })
+  teamId: number;
+
   @Column({ comment: '标题' })
   title: string;
 

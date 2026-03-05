@@ -337,7 +337,12 @@ export class SwaggerBuilder {
         };
       }
 
-      if (requestMeta && shouldOverrideRequestBody(data.requestBody)) {
+      if (
+        requestMeta &&
+        (shouldOverrideRequestBody(data.requestBody) ||
+          path === '/page' ||
+          path === '/list')
+      ) {
         data.requestBody = {
           description: requestMeta.schemaName,
           required: true,

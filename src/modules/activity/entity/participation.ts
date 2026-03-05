@@ -17,6 +17,9 @@ export class ActivityParticipationEntity extends BaseEntity {
   @Column({ comment: '报名时间', nullable: true })
   applyTime: Date;
 
+  @Column({ comment: '状态', dict: ['待审核', '已通过', '已拒绝'], default: 1 })
+  status: number;
+
   @Column({ comment: '打卡记录', type: 'json', nullable: true })
   checkins: any[];
 }

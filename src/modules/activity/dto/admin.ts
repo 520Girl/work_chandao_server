@@ -9,7 +9,7 @@ import { Rule, RuleType } from '@midwayjs/validate';
  *   "startDate": "2026-03-01",
  *   "endDate": "2026-03-31",
  *   "content": "探索内心平静的瑜伽课程",
- *   "isTop": true
+ *   "isTop": 1
  * }
  */
 export class ActivityCreateDTO {
@@ -49,11 +49,25 @@ export class ActivityCreateDTO {
   content?: string;
 
   /**
-   * 是否置顶
-   * @example true
+   * 是否置顶（0 否 1 是）
+   * @example 1
    */
-  @Rule(RuleType.boolean())
-  isTop?: boolean;
+  @Rule(RuleType.number().valid(0, 1))
+  isTop?: number;
+
+  /**
+   * 状态 1草稿 2发布
+   * @example 1
+   */
+  @Rule(RuleType.number())
+  status?: number;
+
+  /**
+   * 团队ID，null 为全局活动
+   * @example 1
+   */
+  @Rule(RuleType.number().optional())
+  teamId?: number | null;
 }
 
 /**
@@ -66,7 +80,7 @@ export class ActivityCreateDTO {
  *   "startDate": "2026-03-01",
  *   "endDate": "2026-03-31",
  *   "content": "更新的内容",
- *   "isTop": false
+ *   "isTop": 0
  * }
  */
 export class ActivityUpdateDTO {
@@ -113,9 +127,60 @@ export class ActivityUpdateDTO {
   content?: string;
 
   /**
-   * 是否置顶
-   * @example false
+   * 是否置顶（0 否 1 是）
+   * @example 0
    */
-  @Rule(RuleType.boolean())
-  isTop?: boolean;
+  @Rule(RuleType.number().valid(0, 1))
+  isTop?: number;
+
+  /**
+   * 状态 1草稿 2发布
+   * @example 1
+   */
+  @Rule(RuleType.number().valid(1, 2))
+  status?: number;
+
+  /**
+   * 发布人ID 系统用户ID
+   * @example 1
+   */
+  @Rule(RuleType.number())
+  authorId?: number;
+
+  /**
+   * 团队ID，null 为全局活动（仅发布且未过期活动可分配）
+   * @example 1
+   */
+  @Rule(RuleType.number().optional())
+  teamId?: number | null;
+
+  /**
+   * 租户ID（仅接受前端回传，不参与更新）
+   */
+  @Rule(RuleType.number().optional())
+  tenantId?: number;
+}
+
+/**
+ * 分配活动团队请求
+ * @example
+ * {
+ *   "id": 1,
+ *   "teamId": 2
+ * }
+ */
+export class ActivityAssignTeamDTO {
+  /**
+   * 活动ID
+   * @example 1
+   */
+  @Rule(RuleType.number().required())
+  id: number;
+
+  /**
+   * 团队ID，null 表示全局活动
+   * @example 2
+   */
+  @Rule(RuleType.number().allow(null))
+  teamId?: number | null;
 }
