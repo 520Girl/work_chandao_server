@@ -337,6 +337,32 @@ export class SwaggerBuilder {
         };
       }
 
+      // App 社区动态流：/app/post/feed 与 /app/post/feed/teams
+      if (fullPath === '/app/post/feed' || fullPath === '/app/post/feed/teams') {
+        data.parameters = [
+          {
+            name: 'page',
+            in: 'query',
+            description: '第几页',
+            required: false,
+            schema: {
+              type: 'integer',
+              default: 1,
+            },
+          },
+          {
+            name: 'size',
+            in: 'query',
+            description: '每页大小',
+            required: false,
+            schema: {
+              type: 'integer',
+              default: 20,
+            },
+          },
+        ];
+      }
+
       if (
         requestMeta &&
         (shouldOverrideRequestBody(data.requestBody) ||

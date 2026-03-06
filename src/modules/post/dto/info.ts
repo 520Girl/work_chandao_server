@@ -38,7 +38,7 @@ export class PostShareDTO {
  * {
  *   "content": "今天的冥想分享",
  *   "images": ["https://example.com/image1.jpg"],
- *   "targetTeamId": 2  // 可选，提交到其他社群时传入，需审核
+ *   "teamId": 2  // 可选，指定发布到的团队，不传则使用首团队；为空表示全局动态
  * }
  */
 export class PostManualDTO {
@@ -57,11 +57,11 @@ export class PostManualDTO {
   images?: string[];
 
   /**
-   * 目标团队ID（可选），提交到其他社群时传入，需管理员审核
+   * 团队ID（可选），指定发布到的团队；为空表示全局动态
    * @example 2
    */
   @Rule(RuleType.number().optional().allow(null))
-  targetTeamId?: number | null;
+  teamId?: number | null;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Provide } from '@midwayjs/core';
+import { Config, Provide } from '@midwayjs/core';
 import { BaseService, CoolCommException, CoolEventManager } from '@cool-midway/core';
 import { InjectEntityModel } from '@midwayjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,11 +8,10 @@ import { MeditationReportEntity } from '../../meditation/entity/report';
 import { MeditationSessionEntity } from '../../meditation/entity/session';
 import { UserInfoEntity } from '../../user/entity/info';
 import { TeamMemberEntity } from '../../team/entity/member';
-import { PluginService } from '../../plugin/service/info';
 import { Inject } from '@midwayjs/core';
 import { join } from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
+import { pUploadPath } from '../../../comm/path';
+import { PluginService } from '../../plugin/service/info';
 
 /**
  * 社区动态服务
@@ -40,6 +39,9 @@ export class PostInfoService extends BaseService {
   @Inject()
   coolEventManager: CoolEventManager;
 
+  @Config('module.plugin.hooks')
+  hooksConfig;
+
   @Inject()
   pluginService: PluginService;
 
@@ -64,13 +66,91 @@ export class PostInfoService extends BaseService {
   }
 
   /**
-   * 生成带有报告信息的分享图片，保存到上传目录并返回与上传接口一致的链接
+   * 生成带有报告信息的分享图片
    */
   private async generateReportImage(
     report: MeditationReportEntity,
     content: string
   ): Promise<string> {
-    return ''; // 临时绕过 canvas 报错
+    try {
+      // 动态引入，避免在未安装依赖时直接报错
+      const canvasLib: any = await require('canvas');
+      const { createCanvas, loadImage } = canvasLib;
+
+      const width = 800;
+      const height = 600;
+      const canvas = createCanvas(width, height);
+      const ctx = canvas.getContext('2d');
+
+      // 背景图路径（后端 public 目录）
+      const bgPath = join(process.cwd(), 'public', 'post', 'report-bg.png');
+      console.log('bgPath', bgPath);
+      try {
+        const bg = await loadImage(bgPath);
+        ctx.drawImage(bg, 0, 0, width, height);
+      } catch {
+        // 背景缺失时使用纯色背景
+        ctx.fillStyle = '#101827';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // 文本样式
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '24px sans-serif';
+      ctx.textBaseline = 'top';
+
+      const lines: string[] = [];
+      const minutes = Math.floor(report.totalDuration / 60);
+      lines.push(`冥想时长：${minutes} 分钟`);
+      lines.push(`专注度：${report.focusScore}%`);
+      lines.push('');
+      lines.push('心得：');
+
+      const maxWidth = width - 120;
+      const words = content.split('');
+      let line = '';
+      for (const ch of words) {
+        const testLine = line + ch;
+        const m = ctx.measureText(testLine);
+        if (m.width > maxWidth) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line) {
+        lines.push(line);
+      }
+
+      let y = 120;
+      for (const l of lines) {
+        ctx.fillText(l, 60, y);
+        y += 32;
+      }
+
+      const buffer = canvas.toBuffer('image/png');
+      const fileName = `report-${report.id}-${Date.now()}.png`;
+      const fs = await import('fs/promises');
+      const dir = join(pUploadPath(), 'post');
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = join(dir, fileName);
+      await fs.writeFile(filePath, buffer);
+
+      // 与上传文件保持一致：domain + /upload/{YYYYMMDD}/post/{fileName}
+      const key = join('post', fileName).replace(/\\/g, '/');
+      const url = await this.pluginService.invoke(
+        'upload',
+        'uploadWithKey',
+        filePath,
+        key
+      );
+      // 修复 Windows 下 URL 可能包含反斜杠的问题
+      return url.replace(/\\/g, '/');
+    } catch (error) {
+      // 出现异常时使用默认背景图
+      return '/post/report-bg.png';
+    }
   }
 
   /**
@@ -109,9 +189,7 @@ export class PostInfoService extends BaseService {
         throw new CoolCommException('您不是目标社群的成员，无法提交');
       }
     }
-    console.log('finalContent', finalContent);
     const imageUrl = await this.generateReportImage(report, finalContent);
-    console.log('imageUrl', imageUrl);
     return this.postInfoEntity.save({
       type: 1,
       userId,
@@ -124,26 +202,30 @@ export class PostInfoService extends BaseService {
 
   /**
    * 手动发布（所有成员可发布）
-   * @param targetTeamId 可选，提交到其他社群时传入，需审核
+   * @param teamId 可选，指定团队；未传入时默认需管理员审核
    */
-  async manual(userId: number, content: string, images: string[], targetTeamId?: number | null) {
+  async manual(userId: number, content: string, images: string[], teamId?: number | null) {
     const userTeamId = await this.getUserTeamId(userId);
     if (!userTeamId) {
       throw new CoolCommException('您还未加入任何社群，请先加入社群');
     }
-    const teamId = targetTeamId ?? userTeamId;
-    const isOtherCommunity = targetTeamId != null && targetTeamId !== userTeamId;
-    const status = isOtherCommunity ? 1 : 2;
-    if (isOtherCommunity) {
-      const inTeam = await this.isUserInTeam(userId, targetTeamId);
-      if (!inTeam) {
-        throw new CoolCommException('您不是目标社群的成员，无法提交');
-      }
+
+    // 最终团队：传入则用传入值，否则用首团队
+    const finalTeamId = teamId ?? userTeamId;
+
+    // 若指定了团队，则必须是该团队成员
+    const inTeam = await this.isUserInTeam(userId, finalTeamId);
+    if (!inTeam) {
+      throw new CoolCommException('您不是目标社群的成员，无法提交');
     }
+
+    // 未传入 teamId 时默认需要管理员审核
+    const status = teamId != null ? 2 : 1;
+
     return this.postInfoEntity.save({
       type: 2,
       userId,
-      teamId,
+      teamId: finalTeamId,
       content,
       images: images || [],
       status,
@@ -193,9 +275,26 @@ export class PostInfoService extends BaseService {
   }
 
   /**
-   * App 动态流：仅 status=2，按时间倒序，按用户所属团队筛选
+   * App 动态流：当前用户自己的动态（仅 status=2），按时间倒序
    */
   async feed(userId: number, page: number = 1, size: number = 20) {
+    const qb = this.postInfoEntity
+      .createQueryBuilder('a')
+      .where('a.status = 2')
+      .andWhere('a.userId = :userId', { userId })
+      .orderBy('a.createTime', 'DESC');
+    const total = await qb.getCount();
+    const list = await qb
+      .skip((page - 1) * size)
+      .take(size)
+      .getMany();
+    return { list, pagination: { page, size, total } };
+  }
+
+  /**
+   * 用户所在团队的动态流：仅 status=2，按时间倒序，按用户所属团队筛选
+   */
+  async feedTeams(userId: number, page: number = 1, size: number = 20) {
     const memberships = await this.teamMemberEntity.findBy({ userId });
     let teamIds = memberships.map((m) => m.teamId);
     const user = await this.userInfoEntity.findOneBy({ id: userId });
