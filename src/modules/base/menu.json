@@ -1296,6 +1296,7 @@
                                 "keepAlive": false,
                                 "isShow": true,
                                 "childMenus": []
+<<<<<<< HEAD
                             },
                             {
                                 "name": "审核",
@@ -1308,6 +1309,8 @@
                                 "keepAlive": false,
                                 "isShow": true,
                                 "childMenus": []
+=======
+>>>>>>> 0bebe718132404afeabb41e190a38aa97bc34be6
                             }
                         ]
                     }
