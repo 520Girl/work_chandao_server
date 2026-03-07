@@ -8,6 +8,7 @@ import {
 import { ALL, Body, Get, Inject, Post, Provide } from '@midwayjs/core';
 import { Context } from '@midwayjs/koa';
 import { PluginService } from '../../../plugin/service/info';
+import { SpaceInfoService } from '../../../space/service/info';
 import { BaseSysUserEntity } from '../../entity/sys/user';
 import { BaseSysLoginService } from '../../service/sys/login';
 import { BaseSysPermsService } from '../../service/sys/perms';
@@ -34,6 +35,9 @@ export class BaseCommController extends BaseController {
 
   @Inject()
   pluginService: PluginService;
+
+  @Inject()
+  spaceInfoService: SpaceInfoService;
 
   /**
    * 获得个人信息
@@ -70,7 +74,9 @@ export class BaseCommController extends BaseController {
   @Post('/upload', { summary: '文件上传' })
   async upload() {
     const file = await this.pluginService.getInstance('upload');
-    return this.ok(await file.upload(this.ctx));
+    const url = await file.upload(this.ctx);
+    await this.spaceInfoService.recordUpload(url, this.ctx);
+    return this.ok(url);
   }
 
   /**

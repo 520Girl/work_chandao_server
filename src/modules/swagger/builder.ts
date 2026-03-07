@@ -337,7 +337,6 @@ export class SwaggerBuilder {
         };
       }
 
-<<<<<<< HEAD
       // App 社区动态流：/app/post/feed 与 /app/post/feed/teams
       if (fullPath === '/app/post/feed' || fullPath === '/app/post/feed/teams') {
         data.parameters = [
@@ -364,8 +363,6 @@ export class SwaggerBuilder {
         ];
       }
 
-=======
->>>>>>> 0bebe718132404afeabb41e190a38aa97bc34be6
       if (
         requestMeta &&
         (shouldOverrideRequestBody(data.requestBody) ||

@@ -10,6 +10,7 @@ import {
 import { Context } from '@midwayjs/koa';
 import { BaseSysParamService } from '../../service/sys/param';
 import { PluginService } from '../../../plugin/service/info';
+import { SpaceInfoService } from '../../../space/service/info';
 
 /**
  * 不需要登录的后台接口
@@ -32,6 +33,9 @@ export class BaseAppCommController extends BaseController {
 
   @Inject()
   baseSysParamService: BaseSysParamService;
+
+  @Inject()
+  spaceInfoService: SpaceInfoService;
 
   @CoolTag(TagTypes.IGNORE_TOKEN)
   @Get('/param', { summary: '参数配置' })
@@ -58,7 +62,9 @@ export class BaseAppCommController extends BaseController {
   @Post('/upload', { summary: '文件上传' })
   async upload() {
     const file = await this.pluginService.getInstance('upload');
-    return this.ok(await file.upload(this.ctx));
+    const url = await file.upload(this.ctx);
+    await this.spaceInfoService.recordUpload(url, this.ctx);
+    return this.ok(url);
   }
 
   /**
