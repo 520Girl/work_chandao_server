@@ -22,6 +22,14 @@ export class MeditationStartDTO {
    */
   @Rule(RuleType.number().required())
   targetDuration: number;
+
+  /**
+   * 冥想类型
+   * 1: 设备冥想, 2: 无设备冥想
+   * @example 1
+   */
+  @Rule(RuleType.number())
+  type: number;
 }
 
 /**

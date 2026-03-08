@@ -32,14 +32,15 @@ export class MeditationSessionService extends BaseService {
   /**
    * 开始冥想
    */
-  async start(userId: number, sn: string, targetDuration: number) {
-    if (!sn) {
-      throw new CoolCommException('设备SN不能为空');
+  async start(userId: number, sn?: string, targetDuration?: number, type?: number) {
+    if (sn) {
+      // 有设备模式
+      const device = await this.deviceInfoEntity.findOneBy({ sn, userId });
+      if (!device) {
+        throw new CoolCommException('设备未绑定');
+      }
     }
-    const device = await this.deviceInfoEntity.findOneBy({ sn, userId });
-    if (!device) {
-      throw new CoolCommException('设备未绑定');
-    }
+
     const active = await this.meditationSessionEntity.findOneBy({
       userId,
       status: 1,
@@ -47,9 +48,11 @@ export class MeditationSessionService extends BaseService {
     if (active) {
       throw new CoolCommException('已有进行中的冥想');
     }
+
     const session = await this.meditationSessionEntity.save({
       userId,
-      sn,
+      sn: sn || null,
+      type: type || (sn ? 1 : 2), // 优先使用传入的type，否则根据sn判断：1: 设备冥想, 2: 无设备冥想
       startDate: new Date(),
       status: 1,
       targetDuration: targetDuration || 0,
@@ -81,10 +84,15 @@ export class MeditationSessionService extends BaseService {
       Math.floor((endDate.getTime() - session.startDate.getTime()) / 1000)
     );
 
-    const data = await this.meditationDataEntity.findBy({
-      sessionId: session.id,
-    });
-    const focusScore = this.calcFocusScore(data);
+    // 仅针对有设备的会话计算数据评分
+    let focusScore = 0;
+    if (session.type === 1) {
+      const data = await this.meditationDataEntity.findBy({
+        sessionId: session.id,
+      });
+      focusScore = this.calcFocusScore(data);
+    }
+    
     const achievements = await this.calcAchievements(userId, endDate);
 
     const report = await this.meditationReportEntity.save({

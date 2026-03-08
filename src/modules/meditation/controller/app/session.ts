@@ -21,12 +21,13 @@ export class AppMeditationSessionController extends BaseController {
   @Post('/start', { summary: '开始冥想' })
   @Validate()
   async start(@Body() body: MeditationStartDTO) {
-    const { sn, targetDuration } = body;
+    const { sn, targetDuration, type } = body;
     return this.ok(
       await this.meditationSessionService.start(
         this.ctx.user.id,
         sn,
-        targetDuration
+        targetDuration,
+        type
       )
     );
   }

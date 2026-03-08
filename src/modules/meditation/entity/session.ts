@@ -10,9 +10,11 @@ export class MeditationSessionEntity extends BaseEntity {
   @Column({ comment: '用户ID' })
   userId: number;
 
-  @Index()
-  @Column({ comment: '设备SN' })
+  @Column({ comment: '设备SN', nullable: true })
   sn: string;
+
+  @Column({ comment: '冥想类型', dict: ['未知', '设备冥想', '无设备冥想'], default: 1 })
+  type: number;
 
   @Column({ comment: '开始时间', nullable: true })
   startDate: Date;
