@@ -736,13 +736,13 @@
         "isShow": true,
         "childMenus": [
             {
-                "name": "用户列表",
-                "router": "/user/list",
+                "name": "用户管理",
+                "router": "/user/info",
                 "perms": null,
                 "type": 1,
                 "icon": "icon-menu",
                 "orderNum": 1,
-                "viewPath": "modules/user/views/list.vue",
+                "viewPath": "modules/user/views/info.vue",
                 "keepAlive": true,
                 "isShow": true,
                 "childMenus": [
@@ -815,6 +815,18 @@
                         "orderNum": 0,
                         "viewPath": null,
                         "keepAlive": true,
+                        "isShow": true,
+                        "childMenus": []
+                    },
+                    {
+                        "name": "用户详情",
+                        "router": null,
+                        "perms": "user:info:userDetailStats",
+                        "type": 2,
+                        "icon": null,
+                        "orderNum": 6,
+                        "viewPath": null,
+                        "keepAlive": false,
                         "isShow": true,
                         "childMenus": []
                     }
@@ -1235,6 +1247,92 @@
                                 "keepAlive": false,
                                 "isShow": true,
                                 "childMenus": []
+                            },
+                            {
+                                "name": "成员管理",
+                                "router": null,
+                                "perms": "team:member:page,team:member:list,team:member:addMember,team:member:removeMember",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 5,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "成员退出信息",
+                                "router": "/team/member",
+                                "perms": null,
+                                "type": 1,
+                                "icon": "icon-user",
+                                "orderNum": 6,
+                                "viewPath": "modules/team/views/member.vue",
+                                "keepAlive": true,
+                                "isShow": true,
+                                "childMenus": [
+                                    {
+                                        "name": "查询",
+                                        "router": null,
+                                        "perms": "team:member:page,team:member:list,team:member:info",
+                                        "type": 2,
+                                        "icon": null,
+                                        "orderNum": 1,
+                                        "viewPath": null,
+                                        "keepAlive": false,
+                                        "isShow": true,
+                                        "childMenus": []
+                                    },
+                                    {
+                                        "name": "删除",
+                                        "router": null,
+                                        "perms": "team:member:delete",
+                                        "type": 2,
+                                        "icon": null,
+                                        "orderNum": 2,
+                                        "viewPath": null,
+                                        "keepAlive": false,
+                                        "isShow": true,
+                                        "childMenus": []
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "团队邀请",
+                        "router": "/team/invite",
+                        "perms": null,
+                        "type": 1,
+                        "icon": "icon-link",
+                        "orderNum": 2,
+                        "viewPath": "modules/team/views/invite.vue",
+                        "keepAlive": true,
+                        "isShow": true,
+                        "childMenus": [
+                            {
+                                "name": "查询",
+                                "router": null,
+                                "perms": "team:invite:page,team:invite:list,team:invite:info",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 1,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
+                            },
+                            {
+                                "name": "创建邀请",
+                                "router": null,
+                                "perms": "team:invite:createInvite",
+                                "type": 2,
+                                "icon": null,
+                                "orderNum": 2,
+                                "viewPath": null,
+                                "keepAlive": false,
+                                "isShow": true,
+                                "childMenus": []
                             }
                         ]
                     },
@@ -1296,12 +1394,11 @@
                                 "keepAlive": false,
                                 "isShow": true,
                                 "childMenus": []
-<<<<<<< HEAD
                             },
                             {
                                 "name": "审核",
                                 "router": null,
-                                "perms": "post:audit",
+                                "perms": "post:info:approve,post:info:reject",
                                 "type": 2,
                                 "icon": null,
                                 "orderNum": 5,
@@ -1309,9 +1406,8 @@
                                 "keepAlive": false,
                                 "isShow": true,
                                 "childMenus": []
-=======
->>>>>>> 0bebe718132404afeabb41e190a38aa97bc34be6
                             }
+                        ]
                         ]
                     }
                 ]

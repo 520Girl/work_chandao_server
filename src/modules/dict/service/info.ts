@@ -42,6 +42,7 @@ export class DictInfoService extends BaseService {
         'a.parentId',
         'a.orderNum',
         'a.value',
+        'a.type',
       ])
       .where('a.typeId in(:...typeIds)', {
         typeIds: typeData.map(e => {

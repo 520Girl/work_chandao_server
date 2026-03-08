@@ -1,5 +1,5 @@
 
-import { Inject, Provide } from '@midwayjs/core';
+import { Init, Inject, Provide } from '@midwayjs/core';
 import {
   BaseService,
   CoolCommException,
@@ -28,14 +28,57 @@ export class TeamInfoService extends BaseService {
   @Inject()
   coolEventManager: CoolEventManager;
 
+  @Init()
+  async init() {
+    await super.init();
+    this.setEntity(this.teamInfoEntity);
+  }
+
   /**
-   * 更新团队成员数量并检查角色升级
+   * 更新团队信息，禁止修改 memberCount、type（由成员变动自动联动）
+   */
+  async update(param: any) {
+    delete param.memberCount;
+    delete param.type;
+    return super.update(param);
+  }
+
+  /**
+   * 根据成员数同步类型并触发角色升级事件（供成员变动后调用）
+   */
+  async syncTypeAndEmit(teamId: number) {
+    const team = await this.teamInfoEntity.findOneBy({ id: teamId });
+    if (team) {
+      const newType = this.calcTypeByMemberCount(team.memberCount);
+      if (team.type !== newType) {
+        await this.teamInfoEntity.update(teamId, { type: newType });
+      }
+      this.coolEventManager.emit('teamMemberCountChanged', team.ownerId, team.memberCount);
+    }
+  }
+
+  /**
+   * 根据成员数计算团队类型：小组(3,10]、营级[10,100)、团级[100,+∞)
+   */
+  private calcTypeByMemberCount(count: number): number {
+    if (count >= 100) return 3; // 团级
+    if (count >= 10) return 2; // 营级
+    if (count > 3) return 1; // 小组
+    return 0; // 未知
+  }
+
+  /**
+   * 更新团队成员数量、自动联动类型，并触发角色升级
    */
   async updateMemberCount(teamId: number, count: number) {
     const team = await this.teamInfoEntity.findOneBy({ id: teamId });
     if (team) {
-      const newCount = team.memberCount + count;
-      await this.teamInfoEntity.update(teamId, { memberCount: newCount });
+      const newCount = Math.max(0, team.memberCount + count);
+      const newType = this.calcTypeByMemberCount(newCount);
+      await this.teamInfoEntity.update(teamId, {
+        memberCount: newCount,
+        type: newType,
+      });
       // 触发自动升级逻辑
       this.coolEventManager.emit(
         'teamMemberCountChanged',

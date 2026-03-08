@@ -10,7 +10,6 @@ import {
   UserBindPhoneDTO,
   UserMiniPhoneDTO,
 } from '../../dto/info';
-import { TeamInfoService } from '../../../team/service/info';
 
 /**
  * 用户信息
@@ -26,19 +25,9 @@ export class AppUserInfoController extends BaseController {
   @Inject()
   userInfoService: UserInfoService;
 
-  @Inject()
-  teamInfoService: TeamInfoService;
-
   @Get('/person', { summary: '获取用户信息' })
   async person() {
     return this.ok(await this.userInfoService.person(this.ctx.user.id));
-  }
-
-  @Post('/joinTeam', { summary: '加入团队' })
-  async joinTeam(@Body('teamId') teamId: number, @Body('invitedBy') invitedBy?: number) {
-    return this.ok(
-      await this.teamInfoService.joinTeam(this.ctx.user.id, teamId, invitedBy)
-    );
   }
 
   @Post('/updatePerson', { summary: '更新用户信息' })

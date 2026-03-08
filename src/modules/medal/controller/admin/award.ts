@@ -15,7 +15,7 @@ import { MedalTemplateEntity } from '../../entity/template';
   pageQueryOp: {
     keyWordLikeFields: ['b.nickName', 'c.name'],
     fieldEq: ['a.userId', 'a.medalId', 'a.level'],
-    select: ['a.*', 'b.nickName', 'b.avatarUrl', 'c.name as medalName', 'c.icon as medalIcon'],
+    select: ['a.*', 'b.nickName', 'b.avatarUrl', 'b.phone', 'c.name as medalName', 'c.icon as medalIcon'],
     join: [
         {
             entity: UserInfoEntity,

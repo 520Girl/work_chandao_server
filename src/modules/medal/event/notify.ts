@@ -22,9 +22,13 @@ export class MedalNotifyEvent {
    */
   @Event('medalAwarded')
   async onMedalAwarded(data: { userId: number; medalName: string; icon: string }) {
-    // 获取 Socket 服务
-    const socketService = await this.app.getApplicationContext().getAsync('socketService');
-    
+    // Socket 推送（可选，项目未配置 socket 时跳过）
+    let socketService = null;
+    try {
+      socketService = await this.app.getApplicationContext().getAsync('socketService');
+    } catch {
+      // socketService 未注册时忽略
+    }
     if (socketService) {
         // 假设 socketService 封装了推送逻辑，或者直接用 @midwayjs/socketio 的 namespace
         // 这里示意性调用，具体依赖项目 socket 实现
