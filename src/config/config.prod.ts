@@ -13,9 +13,9 @@ export default {
         type: 'mysql',
         host: '127.0.0.1',
         port: 3306,
-        username: 'root',
-        password: '123456',
-        database: 'cool',
+        username: 'work_chandao_admin',
+        password: 'workchandaoadmin',
+        database: 'work_chandao_admin',
         // 自动建表 注意：线上部署的时候不要使用，有可能导致数据丢失
         synchronize: false,
         // 打印日志
@@ -30,6 +30,10 @@ export default {
         subscribers: [TenantSubscriber],
       },
     },
+  },
+  // 文件上传返回的图片地址前缀，线上部署时改为你的 API 域名
+  upload: {
+    domain: 'https://jingzuoguanzhao.cn', // 如 https://api.xxx.com
   },
   cool: {
     // 实体与路径，跟生成代码、前端请求、swagger文档相关 注意：线上不建议开启，以免暴露敏感信息

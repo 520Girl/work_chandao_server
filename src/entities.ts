@@ -3,13 +3,14 @@ import * as entity0 from './modules/user/entity/wx';
 import * as entity1 from './modules/user/entity/info';
 import * as entity2 from './modules/user/entity/address';
 import * as entity3 from './modules/team/entity/member';
-import * as entity4 from './modules/team/entity/info';
-import * as entity5 from './modules/task/entity/log';
-import * as entity6 from './modules/task/entity/info';
-import * as entity7 from './modules/space/entity/type';
-import * as entity8 from './modules/space/entity/info';
-import * as entity9 from './modules/shop/entity/product';
-import * as entity10 from './modules/shop/entity/order';
+import * as entity4 from './modules/team/entity/invite';
+import * as entity5 from './modules/team/entity/info';
+import * as entity6 from './modules/task/entity/log';
+import * as entity7 from './modules/task/entity/info';
+import * as entity8 from './modules/space/entity/type';
+import * as entity9 from './modules/space/entity/info';
+import * as entity10 from './modules/shop/entity/product';
+import * as entity11 from './modules/shop/entity/order';
 import * as entity12 from './modules/recycle/entity/data';
 import * as entity13 from './modules/post/entity/like';
 import * as entity14 from './modules/post/entity/info';
@@ -50,6 +51,7 @@ export const entities = [
   ...Object.values(entity8),
   ...Object.values(entity9),
   ...Object.values(entity10),
+  ...Object.values(entity11),
   ...Object.values(entity12),
   ...Object.values(entity13),
   ...Object.values(entity14),

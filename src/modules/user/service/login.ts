@@ -203,6 +203,7 @@ export class UserLoginService extends BaseService {
       encryptedData,
       iv
     );
+    console.log('wxUserInfo',wxUserInfo);
     if (wxUserInfo) {
       // 保存
       wxUserInfo = await this.saveWxInfo(wxUserInfo, 0);

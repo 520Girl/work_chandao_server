@@ -30,6 +30,9 @@ export default {
       },
     },
   },
+  upload: {
+    domain: 'http://127.0.0.1:8001',
+  },
   cool: {
     // 实体与路径，跟生成代码、前端请求、swagger文档相关 注意：线上不建议开启，以免暴露敏感信息
     eps: true,

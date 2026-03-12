@@ -1,3 +1,4 @@
+import * as wx from './wx';
 import { BaseUpload, MODETYPE } from './upload';
 type AnyString = string & {};
 /**
@@ -5,4 +6,5 @@ type AnyString = string & {};
  */
 interface PluginMap {
   upload: BaseUpload;
+  wx: wx.CoolPlugin;
 }

@@ -19,9 +19,12 @@ export default options => {
     hooks: {
       // 文件上传
       upload: {
-        // 地址前缀
-        domain: `http://127.0.0.1:${options?.app?.getConfig('koa.port')}`,
+        // 地址前缀：生产环境用 config.prod 的 upload.domain，本地用 127.0.0.1
+        domain:
+          options?.app?.getConfig('upload.domain') ??
+          `http://127.0.0.1:${options?.app?.getConfig('koa.port')}`,
       },
+      // 微信插件（小程序登录等），配置在插件中
     },
   } as ModuleConfig;
 };
