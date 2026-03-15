@@ -7,10 +7,10 @@ import { DeviceInfoEntity } from '../entity/info';
 import { MeditationDataEntity } from '../../meditation/entity/data';
 import { MeditationSessionEntity } from '../../meditation/entity/session';
 import { DeviceSoapService } from './soap';
-import { MeditationWsService } from '../../meditation/service/ws';
+import * as zlib from 'zlib';
 
 /**
- * Device Service
+ * 设备服务
  */
 @Provide()
 export class DeviceInfoService extends BaseService {
@@ -26,14 +26,11 @@ export class DeviceInfoService extends BaseService {
   @Inject()
   deviceSoapService: DeviceSoapService;
 
-  @Inject()
-  meditationWsService: MeditationWsService;
-
   @Config('device')
   deviceConfig;
 
   /**
-   * Bind device
+   * 绑定设备
    */
   async bind(userId: number, sn: string, model: string, mac: string) {
     let device = await this.deviceInfoEntity.findOne({ where: { sn } });
@@ -50,14 +47,14 @@ export class DeviceInfoService extends BaseService {
     device.model = model;
     device.mac = mac;
     device.bindTime = new Date();
-    device.status = 1; // Online/Active
+    device.status = 1; // 在线/激活
 
     await this.deviceInfoEntity.save(device);
     return device;
   }
 
   /**
-   * Unbind device
+   * 解绑设备
    */
   async unbind(userId: number, sn: string, isForce = false) {
     const device = await this.deviceInfoEntity.findOne({ where: { sn } });
@@ -71,12 +68,12 @@ export class DeviceInfoService extends BaseService {
 
     device.userId = null;
     device.bindTime = null;
-    device.status = 0; // Offline/Inactive
+    device.status = 0; // 离线/未激活
     await this.deviceInfoEntity.save(device);
   }
 
   /**
-   * Add device
+   * 新增设备
    */
   async add(param: any) {
     const exists = await this.deviceInfoEntity.findOneBy({ sn: param.sn });
@@ -87,7 +84,7 @@ export class DeviceInfoService extends BaseService {
   }
 
   /**
-   * Update device
+   * 更新设备
    */
   async update(param: any) {
     if (param.sn) {
@@ -100,30 +97,38 @@ export class DeviceInfoService extends BaseService {
   }
 
   /**
-   * List devices by user
+   * 按用户查询设备列表
    */
   async listByUser(userId: number) {
     return this.deviceInfoEntity.find({ where: { userId } });
   }
 
+  async getUserDeviceByMac(userId: number, mac: string) {
+    const device = await this.deviceInfoEntity.findOne({ where: { userId, mac } });
+    if (!device) {
+      throw new CoolCommException('设备未绑定');
+    }
+    return device;
+  }
+
   /**
-   * Receive pushed data (e.g. from webhook)
+   * 接收设备推送数据（例如 webhook）
    */
   async pushData(data: any) {
-    // Implement based on data structure
-    // Assuming data has sn/mac and sensor values
+    // 根据数据结构实现
+    // 假设数据中包含 sn/mac 和传感器指标
     const mac = data.mac || data.MAC;
     if (!mac) return;
 
-    // Reuse realtime logic logic or save directly
-    // For now, just log or simple save
+    // 复用实时数据处理逻辑，或直接存储
+    // 当前先做日志输出或简单保存
     console.log('Received push data:', data);
-    // TODO: Implement actual saving logic if format is known
+    // TODO: 当数据格式明确后实现实际存储逻辑
     return true;
   }
 
   /**
-   * Get device info (SOAP)
+   * 获取设备信息（SOAP）
    */
   async getDeviceInfo(mac: string) {
     const key = this.deviceConfig.secretKey;
@@ -131,68 +136,83 @@ export class DeviceInfoService extends BaseService {
     return result;
   }
 
-  /**
-   * Get device realtime data and push to user (SOAP)
-   */
+  async refreshDeviceStatusFromCloud(mac: string) {
+    const info = await this.getDeviceInfo(mac);
+    const data = info?.data ?? info;
+    const statusId = data?.status?.id;
+    if (statusId == null) return info;
+    await this.deviceInfoEntity.update({ mac }, { status: statusId, statusUpdateTime: new Date() });
+    return info;
+  }
+
   async getDeviceRealtimeData(mac: string) {
     const key = this.deviceConfig.secretKey;
-    
-    // 1. Call SOAP
     const resp = await this.deviceSoapService.call('GetDeviceRealtimeData', { key, mac });
-    const data = resp?.data ?? resp;
-    
-    // 2. Find device and user
-    const device = await this.deviceInfoEntity.findOne({ where: { mac } });
-    if (!device) {
-      // Device might not be in DB or just not bound
-      // If strict, throw error. If loose, just return data.
-      return resp;
-    }
-
-    // 3. Save to DB (MeditationData)
-    const meditationData = new MeditationDataEntity();
-    
-    // Check active session
-    // Note: MeditationSessionEntity uses 'sn' (string) not 'deviceSn'
-    const session = await this.meditationSessionEntity.findOne({
-      where: { sn: device.sn, status: 1 }, // Assuming 1 is 'In Progress' based on dict ['未知', '进行中', '已结束']? 
-      // Wait, dict: ['未知', '进行中', '已结束', '异常中断']. Index 1 is '进行中'.
-      order: { id: 'DESC' }
-    });
-
-    if (session) {
-      meditationData.sessionId = session.id;
-      session.lastActiveTime = new Date();
-      await this.meditationSessionEntity.save(session);
-    } else {
-      meditationData.sessionId = 0; // Default if no session
-    }
-
-    // Map fields
-    meditationData.recordTime = new Date(); // timestamp
-    meditationData.heartRate = data.heart_rate || data.heartRate || 0;
-    meditationData.breathRate = data.breath_rate || data.breathRate || 0;
-    meditationData.inBed = (data.inbed ?? data.inBed ?? (data.status?.id ? Number(data.status.id) !== 4 : 0)) ? 1 : 0;
-    meditationData.bodyMovement = data.body_movement || data.bodyMovement || 0;
-    meditationData.respiratoryWave = data.respiratory_wave || data.respiratoryWave || '';
-    meditationData.heartRateWave = data.heart_rate_wave || data.heartRateWave || '';
-    meditationData.waveform = (meditationData.respiratoryWave || meditationData.heartRateWave) ? 1 : 0;
-
-    await this.meditationDataEntity.save(meditationData);
-
-    // 4. WebSocket Push
-    if (device.userId) {
-      this.meditationWsService.sendToUser(device.userId, {
-        type: 'realtime',
-        data: meditationData
-      });
-    }
-
     return resp;
   }
 
+  async getMeditationRealtimeData(mac: string) {
+    const resp = await this.getDeviceRealtimeData(mac);
+    const saved = await this.saveMeditationRealtimeData(mac, resp);
+    return { resp, saved };
+  }
+
+  private async saveMeditationRealtimeData(mac: string, resp: any) {
+    const device = await this.deviceInfoEntity.findOne({ where: { mac } });
+    if (!device) return null;
+
+    const session = await this.meditationSessionEntity.findOne({
+      where: { sn: device.sn, status: 1 },
+      order: { id: 'DESC' },
+    });
+    if (!session) return null;
+
+    const samples = Array.isArray(resp?.data)
+      ? resp.data
+      : resp?.data
+        ? [resp.data]
+        : [];
+    if (!samples.length) return null;
+
+    let lastSaved: MeditationDataEntity = null;
+    for (const sample of samples) {
+      const left = sample?.left ?? {};
+      const right = sample?.right ?? {};
+
+      const leftRespWave = left?.respiratory_wave ?? left?.respiratoryWave ?? [];
+      const leftHrWave = left?.heart_rate_wave ?? left?.heartRateWave ?? [];
+      const rightRespWave = right?.respiratory_wave ?? right?.respiratoryWave ?? [];
+      const rightHrWave = right?.heart_rate_wave ?? right?.heartRateWave ?? [];
+
+      const recordTimestamp = Number(sample?.id ?? resp?.timestamp ?? Date.now()) || Date.now();
+      const inBed = sample?.inbed === true || sample?.inBed === true ? 1 : 0;
+
+      let bodyMovement = sample?.body_movement ?? sample?.bodyMovement ?? 0;
+      if (typeof bodyMovement === 'boolean') bodyMovement = bodyMovement ? 1 : 0;
+
+      lastSaved = await this.meditationDataEntity.save({
+        sessionId: session.id,
+        recordTimestamp,
+        heartRate: Number(left?.heart_rate ?? left?.heartRate ?? 0) || 0,
+        breathRate: Number(left?.respiration_rate ?? left?.respirationRate ?? 0) || 0,
+        inBed,
+        bodyMovement: Number(bodyMovement) || 0,
+        waveBlob: zlib.gzipSync(
+          Buffer.from(
+            JSON.stringify({
+              left: { respiratory_wave: leftRespWave, heart_rate_wave: leftHrWave },
+              right: { respiratory_wave: rightRespWave, heart_rate_wave: rightHrWave },
+            })
+          )
+        ),
+      });
+    }
+
+    return lastSaved;
+  }
+
   /**
-   * Get warning info
+   * 获取预警信息
    */
   async getDeviceWarningInfo(mac: string) {
     const key = this.deviceConfig.secretKey;
@@ -200,23 +220,42 @@ export class DeviceInfoService extends BaseService {
   }
 
   /**
-   * Get warning setting
+   * 获取预警设置
    */
   async getDeviceWarningSetting(mac: string) {
     const key = this.deviceConfig.secretKey;
-    return await this.deviceSoapService.call('GetDeviceWarningSetting', { key, mac });
+    const data = await this.deviceSoapService.call('GetDeviceWarningSetting', { key, mac });
+    console.log('获取预警设置:', data);
+    return data;
   }
 
   /**
-   * Set warning setting
+   * 设置预警参数
    */
   async setDeviceWarningSetting(mac: string, settings: any) {
     const key = this.deviceConfig.secretKey;
+    if (settings) {
+      if (settings.heartRateHigh != null && settings.hr_too_fast == null) {
+        settings.hr_too_fast = settings.heartRateHigh;
+      }
+      if (settings.heartRateLow != null && settings.hr_too_slow == null) {
+        settings.hr_too_slow = settings.heartRateLow;
+      }
+      if (settings.breathRateHigh != null && settings.br_too_fast == null) {
+        settings.br_too_fast = settings.breathRateHigh;
+      }
+      if (settings.breathRateLow != null && settings.br_too_slow == null) {
+        settings.br_too_slow = settings.breathRateLow;
+      }
+      if (settings.leaveBedDuration != null && settings.outbed_exceed == null) {
+        settings.outbed_exceed = settings.leaveBedDuration;
+      }
+    }
     return await this.deviceSoapService.call('SetDeviceWarningSetting', { key, mac, ...settings });
   }
 
   /**
-   * Get sleep reports
+   * 获取睡眠报告列表
    */
   async getSleepReports(mac: string, startDate: string, endDate: string) {
     const key = this.deviceConfig.secretKey;
@@ -224,7 +263,7 @@ export class DeviceInfoService extends BaseService {
   }
 
   /**
-   * Get sleep report detail
+   * 获取睡眠报告详情
    */
   async getSleepReportDetail(reportId: string) {
     const key = this.deviceConfig.secretKey;
@@ -232,7 +271,7 @@ export class DeviceInfoService extends BaseService {
   }
 
   /**
-   * Voice alert
+   * 语音预警
    */
   async voiceAlert(mac: string, type: number) {
     const key = this.deviceConfig.secretKey;

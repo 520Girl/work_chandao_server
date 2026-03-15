@@ -17,7 +17,7 @@ import {
 } from '../../dto/manage';
 
 /**
- * Device Management API
+ * 设备管理接口
  */
 @Provide()
 @CoolController({
@@ -30,7 +30,7 @@ export class AdminDeviceManageController extends BaseController {
   deviceInfoService: DeviceInfoService;
 
   /**
-   * Get device info
+   * 获取设备信息
    */
   @Get('/info', { summary: '获取设备信息' })
   @Validate()
@@ -39,16 +39,17 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
-   * Get realtime data
+   * 获取实时数据
    */
   @Post('/realtime', { summary: '获取设备实时数据' })
   @Validate()
   async getDeviceRealtimeData(@Body() body: DeviceRealtimeDTO) {
+    await this.deviceInfoService.refreshDeviceStatusFromCloud(body.mac);
     return this.ok(await this.deviceInfoService.getDeviceRealtimeData(body.mac));
   }
 
   /**
-   * Get warning info
+   * 获取预警信息
    */
   @Get('/warning-info', { summary: '获取设备预警信息' })
   @Validate()
@@ -57,7 +58,7 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
-   * Get warning setting
+   * 获取预警设置
    */
   @Get('/warning-setting', { summary: '获取设备预警设置' })
   @Validate()
@@ -66,17 +67,17 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
-   * Set warning setting
+   * 设置预警参数
    */
   @Post('/warning-setting', { summary: '设置设备预警参数' })
   @Validate()
   async setDeviceWarningSetting(@Body() body: DeviceSetWarningSettingDTO) {
-    const { mac, ...settings } = body;
+    const { mac, id, ...settings } = body as any;
     return this.ok(await this.deviceInfoService.setDeviceWarningSetting(mac, settings));
   }
 
   /**
-   * Get sleep reports
+   * 获取睡眠报告列表
    */
   @Get('/sleep-reports', { summary: '获取睡眠报告列表' })
   @Validate()
@@ -85,7 +86,7 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
-   * Get sleep report detail
+   * 获取睡眠报告详情
    */
   @Get('/sleep-report-detail', { summary: '获取睡眠报告详情' })
   @Validate()
@@ -94,7 +95,7 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
-   * Voice alert
+   * 语音预警
    */
   @Post('/voice-alert', { summary: '发送语音预警' })
   @Validate()

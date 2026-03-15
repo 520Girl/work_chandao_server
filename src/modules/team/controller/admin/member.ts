@@ -13,6 +13,13 @@ import { Context } from '@midwayjs/koa';
   api: ['page', 'info', 'list', 'delete'],
   entity: TeamMemberEntity,
   pageQueryOp: {
+    where: async ctx => {
+      const params = ctx.req.method === 'GET' ? ctx.request.query : ctx.request.body;
+      if (Number(params?.showExitedOnly) === 1) {
+        return [['a.exitType != :activeExitType', { activeExitType: 0 }]];
+      }
+      return [];
+    },
     keyWordLikeFields: ['b.name', 'c.nickName'],
     fieldEq: ['a.teamId', 'a.userId', 'a.exitType'],
     select: ['a.*', 'b.name as teamName', 'c.nickName as userName', 'c.avatarUrl as userAvatar', 'c.phone'],

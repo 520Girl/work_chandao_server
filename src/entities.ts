@@ -15,30 +15,34 @@ import * as entity12 from './modules/recycle/entity/data';
 import * as entity13 from './modules/post/entity/like';
 import * as entity14 from './modules/post/entity/info';
 import * as entity15 from './modules/plugin/entity/info';
-import * as entity16 from './modules/meditation/entity/session';
-import * as entity17 from './modules/meditation/entity/report';
-import * as entity18 from './modules/meditation/entity/data';
-import * as entity19 from './modules/medal/entity/user_medal';
-import * as entity20 from './modules/medal/entity/template';
-import * as entity21 from './modules/dict/entity/type';
-import * as entity22 from './modules/dict/entity/info';
-import * as entity23 from './modules/device/entity/log';
-import * as entity24 from './modules/device/entity/info';
-import * as entity25 from './modules/demo/entity/goods';
-import * as entity26 from './modules/base/entity/base';
-import * as entity27 from './modules/base/entity/sys/user_role';
-import * as entity28 from './modules/base/entity/sys/user';
-import * as entity29 from './modules/base/entity/sys/role_menu';
-import * as entity30 from './modules/base/entity/sys/role_department';
-import * as entity31 from './modules/base/entity/sys/role';
-import * as entity32 from './modules/base/entity/sys/param';
-import * as entity33 from './modules/base/entity/sys/menu';
-import * as entity34 from './modules/base/entity/sys/log';
-import * as entity35 from './modules/base/entity/sys/department';
-import * as entity36 from './modules/base/entity/sys/conf';
-import * as entity37 from './modules/activity/entity/template';
-import * as entity38 from './modules/activity/entity/participation';
-import * as entity39 from './modules/activity/entity/info';
+import * as entity16 from './modules/message/entity/user';
+import * as entity17 from './modules/message/entity/template';
+import * as entity18 from './modules/message/entity/info';
+import * as entity19 from './modules/message/entity/delivery_fail';
+import * as entity20 from './modules/meditation/entity/session';
+import * as entity21 from './modules/meditation/entity/report';
+import * as entity22 from './modules/meditation/entity/data';
+import * as entity23 from './modules/medal/entity/user_medal';
+import * as entity24 from './modules/medal/entity/template';
+import * as entity25 from './modules/dict/entity/type';
+import * as entity26 from './modules/dict/entity/info';
+import * as entity27 from './modules/device/entity/log';
+import * as entity28 from './modules/device/entity/info';
+import * as entity29 from './modules/demo/entity/goods';
+import * as entity30 from './modules/base/entity/base';
+import * as entity31 from './modules/base/entity/sys/user_role';
+import * as entity32 from './modules/base/entity/sys/user';
+import * as entity33 from './modules/base/entity/sys/role_menu';
+import * as entity34 from './modules/base/entity/sys/role_department';
+import * as entity35 from './modules/base/entity/sys/role';
+import * as entity36 from './modules/base/entity/sys/param';
+import * as entity37 from './modules/base/entity/sys/menu';
+import * as entity38 from './modules/base/entity/sys/log';
+import * as entity39 from './modules/base/entity/sys/department';
+import * as entity40 from './modules/base/entity/sys/conf';
+import * as entity41 from './modules/activity/entity/template';
+import * as entity42 from './modules/activity/entity/participation';
+import * as entity43 from './modules/activity/entity/info';
 export const entities = [
   ...Object.values(entity0),
   ...Object.values(entity1),
@@ -80,4 +84,8 @@ export const entities = [
   ...Object.values(entity37),
   ...Object.values(entity38),
   ...Object.values(entity39),
+  ...Object.values(entity40),
+  ...Object.values(entity41),
+  ...Object.values(entity42),
+  ...Object.values(entity43),
 ];

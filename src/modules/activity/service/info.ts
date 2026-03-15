@@ -6,8 +6,10 @@ import { Repository } from 'typeorm';
 import { ActivityInfoEntity } from '../entity/info';
 import { ActivityParticipationEntity } from '../entity/participation';
 import { ActivityTemplateEntity } from '../entity/template';
+import { TeamInfoEntity } from '../../team/entity/info';
 import { TeamMemberEntity } from '../../team/entity/member';
 import { Inject } from '@midwayjs/core';
+import { MessageInfoService } from '../../message/service/info';
 
 /**
  * 活动服务
@@ -26,6 +28,9 @@ export class ActivityInfoService extends BaseService {
   @InjectEntityModel(TeamMemberEntity)
   teamMemberEntity: Repository<TeamMemberEntity>;
 
+  @InjectEntityModel(TeamInfoEntity)
+  teamInfoEntity: Repository<TeamInfoEntity>;
+
   @Logger()
   logger: ILogger;
 
@@ -34,6 +39,29 @@ export class ActivityInfoService extends BaseService {
 
   @Inject()
   ctx;
+
+  @Inject()
+  messageInfoService: MessageInfoService;
+
+  /**
+   * 活动详情（含模板名、团队名，用于编辑回显）
+   */
+  async getInfoWithJoin(id: number) {
+    const row = await this.activityInfoEntity
+      .createQueryBuilder('a')
+      .leftJoin(ActivityTemplateEntity, 'b', 'a.templateId = b.id')
+      .leftJoin(TeamInfoEntity, 'c', 'a.teamId = c.id')
+      .select('a.*')
+      .addSelect('b.name', 'templateName')
+      .addSelect('b.description', 'templateDescription')
+      .addSelect('b.icon', 'templateIcon')
+      .addSelect('c.name', 'teamName')
+      .addSelect('c.type', 'teamType')
+      .addSelect('c.memberCount', 'teamMemberCount')
+      .where('a.id = :id', { id })
+      .getRawOne();
+    return row;
+  }
 
   /**
    * 新增活动（override BaseService.add，走 createActivity 校验模板）
@@ -83,7 +111,7 @@ export class ActivityInfoService extends BaseService {
     if (!template) {
       throw new CoolCommException('模板不存在~');
     }
-    return this.activityInfoEntity.save({
+    const saved = await this.activityInfoEntity.save({
       templateId,
       title,
       startDate,
@@ -94,6 +122,17 @@ export class ActivityInfoService extends BaseService {
       status: status === 2 ? 2 : 1,
       teamId: teamId ?? null,
     });
+    if (saved.status === 2 && saved.teamId) {
+      await this.messageInfoService.sendSystemToUsers({
+        templateKey: 'ACTIVITY_PUBLISHED',
+        targetType: 2,
+        teamId: saved.teamId,
+        bizType: 'activity_published',
+        bizId: saved.id,
+        templateParams: { activityId: saved.id, title: saved.title, teamId: saved.teamId },
+      });
+    }
+    return saved;
   }
 
   /**
@@ -124,6 +163,16 @@ export class ActivityInfoService extends BaseService {
       targetTeamId = teamId;
     }
     await this.activityInfoEntity.update(activityId, { teamId: targetTeamId });
+    if (targetTeamId) {
+      await this.messageInfoService.sendSystemToUsers({
+        templateKey: 'ACTIVITY_PUBLISHED',
+        targetType: 2,
+        teamId: targetTeamId,
+        bizType: 'activity_assigned',
+        bizId: activityId,
+        templateParams: { activityId: activityId, title: activity.title, teamId: targetTeamId },
+      });
+    }
   }
 
   /**
@@ -144,24 +193,37 @@ export class ActivityInfoService extends BaseService {
     if (activity.endDate && activity.endDate < new Date()) {
       throw new CoolCommException('活动已结束~');
     }
-    // 团队分配：仅发布且未过期活动可变更
-    if (data.teamId !== undefined) {
-      if (activity.status !== 2) {
-        throw new CoolCommException('仅发布中的活动可分配团队~');
-      }
-      if (activity.endDate && activity.endDate < new Date()) {
-        throw new CoolCommException('活动已结束，无法分配团队~');
-      }
-      if (data.teamId) {
-        const anyMember = await this.teamMemberEntity.findOneBy({ teamId: data.teamId });
-        if (!anyMember) {
-          throw new CoolCommException('团队不存在或暂无成员~');
+    // 已发布的活动不允许修改模板、团队；仅草稿可改
+    if (activity.status === 2) {
+      delete data.templateId;
+      delete data.teamId;
+    } else {
+      if (data.teamId !== undefined) {
+        if (data.teamId) {
+          const anyMember = await this.teamMemberEntity.findOneBy({ teamId: data.teamId });
+          if (!anyMember) {
+            throw new CoolCommException('团队不存在或暂无成员~');
+          }
+        } else {
+          data.teamId = null;
         }
-      } else {
-        data.teamId = null;
       }
     }
     await this.activityInfoEntity.update(id, data);
+
+    if (activity.status !== 2 && data.status === 2) {
+      const nextTeamId = (data.teamId !== undefined ? data.teamId : activity.teamId) ?? null;
+      if (nextTeamId) {
+        await this.messageInfoService.sendSystemToUsers({
+          templateKey: 'ACTIVITY_PUBLISHED',
+          targetType: 2,
+          teamId: nextTeamId,
+          bizType: 'activity_published',
+          bizId: id,
+          templateParams: { activityId: id, title: data.title ?? activity.title, teamId: nextTeamId },
+        });
+      }
+    }
   }
 
   /**

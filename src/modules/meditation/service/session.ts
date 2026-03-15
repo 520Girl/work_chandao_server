@@ -9,6 +9,9 @@ import { MeditationReportEntity } from '../entity/report';
 import { MeditationDataEntity } from '../entity/data';
 import { Inject } from '@midwayjs/core';
 
+import { DeviceInfoService } from '../../device/service/info';
+import { BaseSysParamService } from '../../base/service/sys/param';
+
 /**
  * 冥想会话服务
  */
@@ -29,6 +32,12 @@ export class MeditationSessionService extends BaseService {
   @Inject()
   coolEventManager: CoolEventManager;
 
+  @Inject()
+  deviceInfoService: DeviceInfoService;
+
+  @Inject()
+  baseSysParamService: BaseSysParamService;
+
   /**
    * 开始冥想
    */
@@ -38,6 +47,19 @@ export class MeditationSessionService extends BaseService {
       const device = await this.deviceInfoEntity.findOneBy({ sn, userId });
       if (!device) {
         throw new CoolCommException('设备未绑定');
+      }
+
+      try {
+        const info = await this.deviceInfoService.getDeviceInfo(device.mac);
+        const data = info?.data;
+
+        await this.deviceInfoEntity.update(device.id, { status: data?.status?.id, statusUpdateTime: new Date() });
+        
+        if (data?.status?.id != 1 && type === 1) {
+          throw new CoolCommException(`设备状态:${data?.status?.name},时间:${data?.status?.since}`);
+        }
+      } catch (e) {
+        throw new CoolCommException(e.message || '获取设备状态失败');
       }
     }
 
@@ -58,7 +80,77 @@ export class MeditationSessionService extends BaseService {
       targetDuration: targetDuration || 0,
       lastActiveTime: new Date(),
     });
-    return session;
+
+    const pollInterval =
+      (await this.baseSysParamService.dataByKey('DEVICE_REALTIME_SYNC_INTERVAL')) ||3000;
+    return { ...session,sessionId: session.id, pollInterval };
+  }
+
+  /**
+   * 轮询冥想状态
+   */
+  async poll(userId: number, sessionId?: number) {
+    const session = sessionId
+      ? await this.meditationSessionEntity.findOneBy({ id: sessionId, userId })
+      : await this.meditationSessionEntity.findOneBy({ userId, status: 1 });
+
+    if (!session || session.status !== 1) {
+      return { status: 'ended', reason: 'finished' };
+    }
+
+    const timeout =
+      (await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_TIMEOUT_MIN')) || 5;
+    const now = Date.now();
+    const lastActive = session.lastActiveTime ? session.lastActiveTime.getTime() : session.startDate.getTime();
+    
+    if (now - lastActive > timeout * 60 * 1000) {
+      await this.end(userId, session.id);
+      return { status: 'ended', reason: 'timeout' };
+    }
+
+    let resp = null;
+    let saved = null;
+    let deviceStatusId = null;
+    if (session.type === 1 && session.sn) {
+      const device = await this.deviceInfoEntity.findOneBy({ sn: session.sn });
+      if (device) {
+        try {
+          const statusInterval =
+            (await this.baseSysParamService.dataByKey('DEVICE_STATUS_SYNC_INTERVAL')) || 5000;
+          const lastStatusTime = device.statusUpdateTime ? device.statusUpdateTime.getTime() : 0;
+          const shouldRefreshStatus = !lastStatusTime || now - lastStatusTime >= statusInterval;
+
+          if (shouldRefreshStatus) {
+            const info = await this.deviceInfoService.getDeviceInfo(device.mac);
+            const infoData = info?.data ?? info;
+            deviceStatusId = infoData?.status?.id ?? null;
+            await this.deviceInfoEntity.update(device.id, {
+              status: deviceStatusId,
+              statusUpdateTime: new Date(),
+            });
+          } else {
+            deviceStatusId = device.status;
+          }
+
+          if (deviceStatusId == 1) {
+            session.lastActiveTime = new Date();
+            await this.meditationSessionEntity.save(session);
+            const result = await this.deviceInfoService.getMeditationRealtimeData(device.mac);
+            resp = result?.resp ?? null;
+            saved = result?.saved ?? null;
+          }
+        } catch (e) {
+        }
+      }
+    }
+
+    return { 
+      status: 'ongoing', 
+      resp,
+      saved,
+      deviceStatusId,
+      elapsed: Math.floor((now - session.startDate.getTime()) / 1000)
+    };
   }
 
   /**
@@ -71,6 +163,10 @@ export class MeditationSessionService extends BaseService {
 
     if (!session) {
       throw new CoolCommException('冥想会话不存在');
+    }
+
+    if (session.status !== 1) {
+      throw new CoolCommException('冥想会话已结束');
     }
 
     const endDate = new Date();
@@ -119,6 +215,33 @@ export class MeditationSessionService extends BaseService {
       .orderBy('a.id', 'DESC')
       .select(['a.*', 'b.sn', 'b.startDate', 'b.endDate', 'b.targetDuration'])
       .getRawMany();
+  }
+
+  async autoEndExpiredDeviceSessions() {
+    const enabled = await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_JOB_ENABLED');
+    if (enabled === 0 || enabled === '0' || enabled === false) return;
+
+    const timeout =
+      (await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_TIMEOUT_MIN')) ||
+      (await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_TIMEOUT')) ||
+      5;
+
+    const threshold = new Date(Date.now() - timeout * 60 * 1000);
+    const sessions = await this.meditationSessionEntity
+      .createQueryBuilder('a')
+      .where('a.status = :status', { status: 1 })
+      .andWhere('a.type = :type', { type: 1 })
+      .andWhere('(a.lastActiveTime IS NULL AND a.startDate < :threshold OR a.lastActiveTime < :threshold)', {
+        threshold,
+      })
+      .select(['a.id', 'a.userId'])
+      .getMany();
+
+    for (const s of sessions) {
+      try {
+        await this.end(s.userId, s.id);
+      } catch (e) {}
+    }
   }
 
   private calcFocusScore(data: MeditationDataEntity[]) {

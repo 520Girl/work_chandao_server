@@ -6,6 +6,7 @@ import { TeamMemberEntity } from '../entity/member';
 import { TeamInfoEntity } from '../entity/info';
 import { UserInfoEntity } from '../../user/entity/info';
 import { TeamInfoService } from './info';
+import { MessageInfoService } from '../../message/service/info';
 
 /**
  * 团队成员服务
@@ -23,6 +24,9 @@ export class TeamMemberService extends BaseService {
 
   @Inject()
   teamInfoService: TeamInfoService;
+
+  @Inject()
+  messageInfoService: MessageInfoService;
 
   /**
    * 加入团队 (Transactional)
@@ -92,6 +96,23 @@ export class TeamMemberService extends BaseService {
       await manager.decrement(TeamInfoEntity, { id: teamId }, 'memberCount', 1);
     });
     await this.teamInfoService.syncTypeAndEmit(teamId);
+
+    const team = await this.teamInfoEntity.findOneBy({ id: teamId });
+    const user = await this.userInfoEntity.findOneBy({ id: userId });
+    await this.messageInfoService.sendSystemToUsers({
+      templateKey: 'TEAM_MEMBER_LEFT',
+      targetType: 3,
+      teamId,
+      bizType: 'team_member_removed',
+      bizId: teamId,
+      templateParams: {
+        teamName: team?.name ?? '',
+        userId,
+        userName: user?.nickName ?? '',
+        exitType: 2,
+        operatorId,
+      },
+    });
   }
 
   /**
@@ -115,6 +136,22 @@ export class TeamMemberService extends BaseService {
       await manager.decrement(TeamInfoEntity, { id: teamId }, 'memberCount', 1);
     });
     await this.teamInfoService.syncTypeAndEmit(teamId);
+
+    const team = await this.teamInfoEntity.findOneBy({ id: teamId });
+    const user = await this.userInfoEntity.findOneBy({ id: userId });
+    await this.messageInfoService.sendSystemToUsers({
+      templateKey: 'TEAM_MEMBER_LEFT',
+      targetType: 3,
+      teamId,
+      bizType: 'team_member_quit',
+      bizId: teamId,
+      templateParams: {
+        teamName: team?.name ?? '',
+        userId,
+        userName: user?.nickName ?? '',
+        exitType: 1,
+      },
+    });
   }
 
   /**

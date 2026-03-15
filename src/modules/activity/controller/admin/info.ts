@@ -12,7 +12,7 @@ import { ActivityUpdateDTO, ActivityAssignTeamDTO } from '../../dto/admin';
  */
 @CoolController({
   prefix: '/admin/activity/info',
-  api: ['add', 'delete', 'update', 'info', 'list', 'page'],
+  api: ['add', 'delete', 'update', 'list', 'page'],
   entity: ActivityInfoEntity,
   insertParam: ctx => ({ authorId: ctx.admin.userId, status: 1 }),
   pageQueryOp: {
@@ -40,6 +40,15 @@ export class AdminActivityInfoController extends BaseController {
 
   @Inject()
   activityInfoService: ActivityInfoService;
+
+  @Post('/info', { summary: '活动详情（含模板名、团队名）' })
+  async info(@Body() body: any) {
+    const id = body?.id ?? body;
+    if (id == null) return this.fail('缺少 id');
+    const row = await this.activityInfoService.getInfoWithJoin(Number(id));
+    if (!row) return this.fail('活动不存在');
+    return this.ok(row);
+  }
 
   @Post('/update', { summary: '编辑活动' })
   @Validate()

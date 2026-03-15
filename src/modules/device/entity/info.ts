@@ -19,9 +19,12 @@ export class DeviceInfoEntity extends BaseEntity {
 
   @Column({ comment: '绑定时间', nullable: true })
   bindDate: Date;
-
-  @Column({ comment: '状态', dict: ['离线', '在线', '禁用'], default: 0 })
+  // 状态 0未激活 1使用中 2无人使用 3离床 4离线
+  @Column({ comment: '状态', dict: ['未激活', '使用中', '无人使用', '离床', '离线'], default: 0 })
   status: number;
+
+  @Column({ comment: '状态更新时间', nullable: true })
+  statusUpdateTime: Date;
 
   @Column({ comment: 'MAC地址', nullable: true })
   mac: string;

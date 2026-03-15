@@ -3,6 +3,7 @@ import { Inject, Provide, Scope, ScopeEnum, App } from '@midwayjs/core';
 import { CoolEvent, Event } from '@cool-midway/core';
 import { IMidwayApplication } from '@midwayjs/core';
 import { Context } from '@midwayjs/socketio';
+import { MessageInfoService } from '../../message/service/info';
 
 /**
  * 勋章通知事件
@@ -17,11 +18,22 @@ export class MedalNotifyEvent {
   @Inject()
   ctx: Context;
 
+  @Inject()
+  messageInfoService: MessageInfoService;
+
   /**
    * 勋章发放成功后，通过 Socket 推送
    */
   @Event('medalAwarded')
   async onMedalAwarded(data: { userId: number; medalName: string; icon: string }) {
+    await this.messageInfoService.sendSystemToUsers({
+      templateKey: 'MEDAL_AWARDED',
+      targetType: 1,
+      userIds: [data.userId],
+      bizType: 'medal_awarded',
+      templateParams: { medalName: data.medalName, icon: data.icon },
+    });
+
     // Socket 推送（可选，项目未配置 socket 时跳过）
     let socketService = null;
     try {

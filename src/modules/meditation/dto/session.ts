@@ -47,3 +47,19 @@ export class MeditationEndDTO {
   @Rule(RuleType.number().required())
   sessionId: number;
 }
+
+/**
+ * 冥想状态轮询
+ * @example
+ * {
+ *   "sessionId": 1
+ * }
+ */
+export class MeditationPollDTO {
+  /**
+   * 会话ID (可选，不传则自动查找当前进行中的会话)
+   * @example 1
+   */
+  @Rule(RuleType.number())
+  sessionId: number;
+}

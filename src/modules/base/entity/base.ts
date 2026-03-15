@@ -20,7 +20,15 @@ export const transformerTime = {
  * Json转换器
  */
 export const transformerJson = {
-  to: value => value,
+  to: value => {
+    if (value == null) return value;
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value);
+    } catch (e) {
+      return String(value);
+    }
+  },
   from: value => {
     // 确保从数据库返回的是对象
     if (typeof value === 'string') {

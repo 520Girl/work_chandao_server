@@ -1,7 +1,7 @@
 import { Body, Get, Inject, Post } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { MeditationSessionService } from '../../service/session';
-import { MeditationStartDTO, MeditationEndDTO } from '../../dto/session';
+import { MeditationStartDTO, MeditationEndDTO, MeditationPollDTO } from '../../dto/session';
 import { Validate } from '@midwayjs/validate';
 
 /**
@@ -37,6 +37,14 @@ export class AppMeditationSessionController extends BaseController {
   async end(@Body() body: MeditationEndDTO) {
     return this.ok(
       await this.meditationSessionService.end(this.ctx.user.id, body.sessionId)
+    );
+  }
+
+  @Post('/poll', { summary: '轮询冥想状态' })
+  @Validate()
+  async poll(@Body() body: MeditationPollDTO) {
+    return this.ok(
+      await this.meditationSessionService.poll(this.ctx.user.id, body.sessionId)
     );
   }
 

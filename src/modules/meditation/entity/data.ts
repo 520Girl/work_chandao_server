@@ -10,8 +10,9 @@ export class MeditationDataEntity extends BaseEntity {
   @Column({ comment: '会话ID', default: 0 })
   sessionId: number;
 
-  @Column({ comment: '时间戳', nullable: true })
-  recordTime: Date;
+  @Index()
+  @Column({ comment: '毫秒时间戳', type: 'bigint', default: 0 })
+  recordTimestamp: number;
 
   @Column({ comment: '心率', default: 0 })
   heartRate: number;
@@ -25,12 +26,6 @@ export class MeditationDataEntity extends BaseEntity {
   @Column({ comment: '体动值', default: 0 })
   bodyMovement: number;
 
-  @Column({ comment: '是否包含波形数据', dict: ['否', '是'], default: 0 })
-  waveform: number;
-
-  @Column({ comment: '呼吸波形数据', type: 'text', nullable: true })
-  respiratoryWave: string;
-
-  @Column({ comment: '心率波形数据', type: 'text', nullable: true })
-  heartRateWave: string;
+  @Column({ comment: '压缩波形数据', type: 'longblob', nullable: true })
+  waveBlob: Buffer;
 }

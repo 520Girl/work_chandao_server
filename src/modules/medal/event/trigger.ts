@@ -64,9 +64,9 @@ export class MedalEventListener {
         .createQueryBuilder('session')
         .where('session.userId = :userId', { userId })
         .andWhere('session.status = 2')
-        .orderBy('session.startDate', 'DESC')
         .select('DATE(session.startDate)', 'date')
         .distinct(true)
+        .orderBy('DATE(session.startDate)', 'DESC')
         .getRawMany();
 
     let consecutiveDays = 0;

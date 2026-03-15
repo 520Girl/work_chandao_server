@@ -2,7 +2,7 @@
 import { Rule, RuleType } from '@midwayjs/validate';
 
 /**
- * Get device info request
+ * 获取设备信息请求
  */
 export class DeviceInfoDTO {
   @Rule(RuleType.string().required())
@@ -10,7 +10,7 @@ export class DeviceInfoDTO {
 }
 
 /**
- * Get device realtime data request
+ * 获取设备实时数据请求
  */
 export class DeviceRealtimeDTO {
   @Rule(RuleType.string().required())
@@ -18,7 +18,7 @@ export class DeviceRealtimeDTO {
 }
 
 /**
- * Get warning info request
+ * 获取预警信息请求
  */
 export class DeviceWarningInfoDTO {
   @Rule(RuleType.string().required())
@@ -26,7 +26,7 @@ export class DeviceWarningInfoDTO {
 }
 
 /**
- * Get warning setting request
+ * 获取预警设置请求
  */
 export class DeviceWarningSettingDTO {
   @Rule(RuleType.string().required())
@@ -34,11 +34,68 @@ export class DeviceWarningSettingDTO {
 }
 
 /**
- * Set warning setting request
+ * 设置预警参数请求
  */
 export class DeviceSetWarningSettingDTO {
+  @Rule(RuleType.number().optional())
+  id?: number;
+
   @Rule(RuleType.string().required())
   mac: string;
+
+  @Rule(RuleType.boolean().optional())
+  is_hr_message?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_hr_voice?: boolean;
+
+  @Rule(RuleType.number().optional())
+  hr_too_fast?: number;
+
+  @Rule(RuleType.number().optional())
+  hr_too_slow?: number;
+
+  @Rule(RuleType.boolean().optional())
+  is_br_message?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_br_voice?: boolean;
+
+  @Rule(RuleType.number().optional())
+  br_too_fast?: number;
+
+  @Rule(RuleType.number().optional())
+  br_too_slow?: number;
+
+  @Rule(RuleType.boolean().optional())
+  is_outbed_message?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_outbed_voice?: boolean;
+
+  @Rule(RuleType.number().optional())
+  outbed_exceed?: number;
+
+  @Rule(RuleType.string().optional())
+  outbed_start_time?: string;
+
+  @Rule(RuleType.string().optional())
+  outbed_end_time?: string;
+
+  @Rule(RuleType.boolean().optional())
+  is_sos_message?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_sos_voice?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_apnea_message?: boolean;
+
+  @Rule(RuleType.boolean().optional())
+  is_apnea_voice?: boolean;
+
+  @Rule(RuleType.array().optional())
+  phone_list?: string[];
 
   @Rule(RuleType.number().optional())
   heartRateHigh?: number;
@@ -57,12 +114,10 @@ export class DeviceSetWarningSettingDTO {
 
   @Rule(RuleType.number().optional())
   leaveBedDuration?: number;
-  
-  // Allow other properties dynamically if needed, or strict type them
 }
 
 /**
- * Get sleep reports request
+ * 获取睡眠报告列表请求
  */
 export class DeviceSleepReportDTO {
   @Rule(RuleType.string().required())
@@ -76,7 +131,7 @@ export class DeviceSleepReportDTO {
 }
 
 /**
- * Get sleep report detail request
+ * 获取睡眠报告详情请求
  */
 export class DeviceSleepReportDetailDTO {
   @Rule(RuleType.string().required())
@@ -84,7 +139,7 @@ export class DeviceSleepReportDetailDTO {
 }
 
 /**
- * Voice alert request
+ * 语音预警请求
  */
 export class DeviceVoiceAlertDTO {
   @Rule(RuleType.string().required())
