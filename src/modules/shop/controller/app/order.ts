@@ -1,4 +1,4 @@
-import { Body, Get, Inject, Post } from '@midwayjs/core';
+import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { ShopOrderService } from '../../service/order';
 import { ShopOrderCreateDTO } from '../../dto/order';
@@ -40,9 +40,13 @@ export class AppShopOrderController extends BaseController {
   }
 
   @Get('/detail', { summary: '订单详情' })
-  async detail(id: number) {
+  async detail(@Query('id') id: string) {
+    const orderId = Number(id);
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      return this.fail('id 参数错误');
+    }
     return this.ok(
-      await this.shopOrderService.detail(id, this.ctx.user.id)
+      await this.shopOrderService.detail(orderId, this.ctx.user.id)
     );
   }
 

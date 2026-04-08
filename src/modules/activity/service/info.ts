@@ -77,6 +77,7 @@ export class ActivityInfoService extends BaseService {
       isTop,
       status,
       teamId,
+      checkinMode,
     } = param;
     return this.createActivity(
       creatorId,
@@ -87,7 +88,8 @@ export class ActivityInfoService extends BaseService {
       content ?? '',
       isTop ? 1 : 0,
       status === 2 ? 2 : 1,
-      teamId ?? null
+      teamId ?? null,
+      Number(checkinMode) === 2 ? 2 : 1
     );
   }
 
@@ -103,7 +105,8 @@ export class ActivityInfoService extends BaseService {
     content: string,
     isTop: number,
     status = 1,
-    teamId: number = null
+    teamId: number = null,
+    checkinMode: number = 1
   ) {
     const template = await this.activityTemplateEntity.findOneBy({
       id: templateId,
@@ -121,6 +124,7 @@ export class ActivityInfoService extends BaseService {
       authorId: creatorId,
       status: status === 2 ? 2 : 1,
       teamId: teamId ?? null,
+      checkinMode: Number(checkinMode) === 2 ? 2 : 1,
     });
     if (saved.status === 2 && saved.teamId) {
       await this.messageInfoService.sendSystemToUsers({
@@ -297,6 +301,7 @@ export class ActivityInfoService extends BaseService {
         'a.isTop',
         'a.templateId',
         'a.teamId',
+        'a.checkinMode',
       ])
       .addSelect('b.name', 'templateName')
       .addSelect('b.icon', 'templateIcon')
@@ -400,6 +405,9 @@ export class ActivityInfoService extends BaseService {
     if (activity.status !== 2) {
       throw new CoolCommException('仅发布中的活动可打卡~');
     }
+    if (activity.startDate && activity.startDate > new Date()) {
+      throw new CoolCommException('活动未开始~');
+    }
     if (activity.endDate && activity.endDate < new Date()) {
       throw new CoolCommException('活动已结束~');
     }
@@ -420,6 +428,16 @@ export class ActivityInfoService extends BaseService {
     });
     if (!participation) {
       throw new CoolCommException('请先报名活动再打卡~');
+    }
+
+    const checkinMode = Number(activity.checkinMode) || 1;
+    if (checkinMode === 2) {
+      const existsChecked =
+        Array.isArray(participation.checkins) &&
+        participation.checkins.some((d: any) => d?.checked);
+      if (existsChecked) {
+        throw new CoolCommException('该活动仅需打卡一次，已完成打卡~');
+      }
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -449,28 +467,44 @@ export class ActivityInfoService extends BaseService {
       .createQueryBuilder('p')
       .innerJoin(ActivityInfoEntity, 'a', 'p.activityId = a.id')
       .where('a.status = :status', { status: 2 })
+      .andWhere('(a.startDate IS NULL OR a.startDate <= :now)', { now })
       .andWhere('(a.endDate IS NULL OR a.endDate >= :now)', { now })
+      .andWhere('a.checkinMode = :checkinMode', { checkinMode: 1 })
       .andWhere('a.teamId IS NOT NULL')
       .select('p.userId', 'userId')
       .addSelect('p.activityId', 'activityId')
       .addSelect('p.checkins', 'checkins')
       .addSelect('a.title', 'activityTitle')
+      .addSelect('a.teamId', 'teamId')
       .getRawMany();
 
+    const groups = new Map<
+      number,
+      { activityId: number; activityTitle: string; teamId: number; userIds: number[] }
+    >();
     for (const row of rows) {
       const checkins = Array.isArray(row.checkins) ? row.checkins : [];
       const hasToday = checkins.some((d: any) => d?.date === today && d?.checked);
       if (!hasToday) {
-        this.logger.info('activity.checkin.miss', {
-          userId: row.userId,
-          activityId: row.activityId,
-        });
-        this.coolEventManager.emit('activityCheckinReminder', {
-          userId: row.userId,
-          activityId: row.activityId,
-          activityTitle: row.activityTitle,
-        });
+        const aid = Number(row.activityId);
+        const uid = Number(row.userId);
+        if (aid > 0 && uid > 0) {
+          const g =
+            groups.get(aid) ??
+            {
+              activityId: aid,
+              activityTitle: row.activityTitle,
+              teamId: Number(row.teamId) || null,
+              userIds: [],
+            };
+          g.userIds.push(uid);
+          groups.set(aid, g);
+        }
       }
+    }
+
+    for (const g of groups.values()) {
+      this.coolEventManager.emit('activityCheckinReminder', g);
     }
   }
 }

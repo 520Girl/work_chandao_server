@@ -15,7 +15,7 @@ import { Validate } from '@midwayjs/validate';
   service: ShopProductService,
   pageQueryOp: {
     keyWordLikeFields: ['name'],
-    select: ['id', 'name', 'price', 'mainImage', 'isCommission'],
+    select: ['id', 'name', 'intro', 'price', 'mainImage', 'isCommission'],
   },
 })
 export class AppShopProductController extends BaseController {

@@ -23,6 +23,7 @@ export class ShopProductService extends BaseService {
             a.name,
             a.price,
             a.mainImage,
+            a.intro,
             a.isCommission
         FROM
             shop_product a

@@ -34,4 +34,7 @@ export class ActivityInfoEntity extends BaseEntity {
 
   @Column({ comment: '状态', dict: ['未知', '草稿', '发布'], default: 1 })
   status: number;
+
+  @Column({ comment: '打卡模式', dict: ['未知', '每日打卡', '仅一次'], default: 1 })
+  checkinMode: number;
 }

@@ -30,6 +30,13 @@ export class PostShareDTO {
    */
   @Rule(RuleType.number().optional().allow(null))
   targetTeamId?: number | null;
+
+  /**
+   * 用户状态：1漂浮 2宁静 3消散 4觉察
+   * @default 1
+   */
+  @Rule(RuleType.number().default(1).optional())
+  userState?: number;
 }
 
 /**
@@ -62,6 +69,13 @@ export class PostManualDTO {
    */
   @Rule(RuleType.number().optional().allow(null))
   teamId?: number | null;
+
+  /**
+   * 用户状态：1漂浮 2宁静 3消散 4觉察
+   * @default 1
+   */
+  @Rule(RuleType.number().default(1).optional())
+  userState?: number;
 }
 
 /**

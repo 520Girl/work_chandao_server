@@ -1,6 +1,7 @@
-import { Provide, Scope, ScopeEnum, App } from '@midwayjs/core';
+import { Provide, Scope, ScopeEnum } from '@midwayjs/core';
 import { CoolEvent, Event } from '@cool-midway/core';
-import { IMidwayApplication } from '@midwayjs/core';
+import { MessageInfoService } from '../../message/service/info';
+import { Inject } from '@midwayjs/core';
 
 /**
  * 活动打卡提醒事件
@@ -10,27 +11,31 @@ import { IMidwayApplication } from '@midwayjs/core';
 @Scope(ScopeEnum.Singleton)
 @CoolEvent()
 export class ActivityCheckinReminderEvent {
-  @App()
-  app: IMidwayApplication;
+  @Inject()
+  messageInfoService: MessageInfoService;
 
   @Event('activityCheckinReminder')
   async onCheckinReminder(data: {
-    userId: number;
+    userIds: number[];
     activityId: number;
     activityTitle: string;
+    teamId: number;
   }) {
-    const nsp = this.app['io']?.of('/');
-    if (nsp) {
-      try {
-        nsp.to(`user:${data.userId}`).emit('activityCheckinReminder', {
-          type: 'activityCheckinReminder',
-          activityId: data.activityId,
-          activityTitle: data.activityTitle,
-          message: `今日活动「${data.activityTitle}」尚未打卡，请及时完成~`,
-        });
-      } catch (e) {
-        console.error('[ActivityCheckinReminder] Socket推送失败', e);
-      }
-    }
+    const userIds = Array.isArray(data?.userIds) ? data.userIds.filter((id) => Number(id) > 0) : [];
+    if (!userIds.length) return;
+
+    await this.messageInfoService.sendSystemToUsers({
+      templateKey: 'ACTIVITY_CHECKIN_REMINDER',
+      targetType: 1,
+      userIds,
+      teamId: data.teamId ?? null,
+      bizType: 'activity_checkin_reminder',
+      bizId: Number(data.activityId),
+      templateParams: {
+        activityId: Number(data.activityId),
+        title: data.activityTitle,
+        teamId: data.teamId ?? null,
+      },
+    });
   }
 }

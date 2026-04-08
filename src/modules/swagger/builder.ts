@@ -55,6 +55,7 @@ export class SwaggerBuilder {
    * @returns
    */
   convertToSwagger(dataJson) {
+    const swaggerBuilder = this;
     const swagger = {
       ...this.swaggerBase,
       paths: {},
@@ -109,7 +110,7 @@ export class SwaggerBuilder {
       return typeMapping[type] || 'string';
     }
     // 添加请求体
-    function addRequest(path, fullPath, schemas, data, method) {
+    const addRequest = (path, fullPath, schemas, data, method) => {
       const routeKey = `${method} ${normalizeRoute(fullPath)}`;
       const requestMeta = swaggerMeta.requestByRoute.get(routeKey);
       const responseMeta = swaggerMeta.responseByRoute.get(routeKey);
@@ -337,8 +338,12 @@ export class SwaggerBuilder {
         };
       }
 
-      // App 社区动态流：/app/post/feed 与 /app/post/feed/teams
-      if (fullPath === '/app/post/feed' || fullPath === '/app/post/feed/teams') {
+      // App 社区动态流：/app/post/feed、/app/post/feed/teams、/app/post/feed/mixed
+      if (
+        fullPath === '/app/post/feed' ||
+        fullPath === '/app/post/feed/teams' ||
+        fullPath === '/app/post/feed/mixed'
+      ) {
         data.parameters = [
           {
             name: 'page',
@@ -363,12 +368,41 @@ export class SwaggerBuilder {
         ];
       }
 
+      // 将 DTO 请求类型映射到 GET 查询参数（例如设备管理等使用 @Query( ) DTO 的接口）
+      if (
+        method === 'get' &&
+        requestMeta &&
+        swaggerMeta.dtoSchemas[requestMeta.schemaName] &&
+        (_.isEmpty(data.parameters) || !Array.isArray(data.parameters))
+      ) {
+        const dtoSchema = swaggerMeta.dtoSchemas[requestMeta.schemaName];
+        const requiredSet = new Set<string>(dtoSchema.required || []);
+        data.parameters = Object.entries(dtoSchema.properties || {}).map(
+          ([name, propSchema]: [string, any]) => ({
+            name,
+            in: 'query',
+            description: propSchema.description || '',
+            required: requiredSet.has(name),
+            schema: {
+              type: propSchema.type || 'string',
+              ...(propSchema.default !== undefined ? { default: propSchema.default } : {}),
+            },
+            ...(propSchema.example !== undefined ? { example: propSchema.example } : {}),
+          })
+        );
+      }
+
       if (
         requestMeta &&
         (shouldOverrideRequestBody(data.requestBody) ||
           path === '/page' ||
           path === '/list')
       ) {
+        const dtoSchema = swaggerMeta.dtoSchemas[requestMeta.schemaName];
+        const example =
+          dtoSchema && dtoSchema.type === 'object'
+            ? swaggerBuilder.buildExampleFromSchema(dtoSchema)
+            : undefined;
         data.requestBody = {
           description: requestMeta.schemaName,
           required: true,
@@ -384,6 +418,7 @@ export class SwaggerBuilder {
                 : {
                     $ref: `#/components/schemas/${requestMeta.schemaName}`,
                   },
+              ...(example !== undefined ? { example } : {}),
             },
           },
         };
@@ -436,7 +471,7 @@ export class SwaggerBuilder {
           },
         };
       }
-    }
+    };
     // 处理每个模块下的API接口（surfaceLabel：管理端 / 用户端，便于 Swagger 分组与摘要区分）
     function processModuleApis(moduleApis, moduleName, surfaceLabel: string) {
       const tagLabel = `${surfaceLabel} · ${moduleName || '其他'}`;
@@ -629,11 +664,24 @@ export class SwaggerBuilder {
           const typeInfo = this.getTypeInfo(member);
           const swaggerSchema = this.inferSwaggerSchema(ruleInfo, typeInfo);
           const description = this.getJsDocComment(member) || '';
+          const jsDocDefault = this.getJsDocTag(member, 'default');
+          const jsDocExample = this.getJsDocTag(member, 'example');
+          const initDefault = this.extractDefaultFromInitializer(member);
 
           schema.properties[propName] = {
             ...swaggerSchema,
             description,
           };
+          if (schema.properties[propName].default === undefined) {
+            if (jsDocDefault) {
+              schema.properties[propName].default = this.parseLiteralValue(jsDocDefault);
+            } else if (initDefault !== undefined) {
+              schema.properties[propName].default = initDefault;
+            }
+          }
+          if (schema.properties[propName].example === undefined && jsDocExample) {
+            schema.properties[propName].example = this.parseLiteralValue(jsDocExample);
+          }
 
           if (ruleInfo.required) {
             schema.required.push(propName);
@@ -854,7 +902,8 @@ export class SwaggerBuilder {
     if (ruleType === 'required') {
       ruleType = '';
     }
-    return { required, ruleType };
+    const defaultValue = this.extractDefaultFromRuleText(ruleText);
+    return { required, ruleType, defaultValue };
   }
 
   private getTypeInfo(member: ts.PropertyDeclaration) {
@@ -896,7 +945,7 @@ export class SwaggerBuilder {
   }
 
   private inferSwaggerSchema(
-    ruleInfo: { required: boolean; ruleType: string },
+    ruleInfo: { required: boolean; ruleType: string; defaultValue?: any },
     typeInfo: { type: string; isArray: boolean }
   ) {
     const ruleTypeMap = {
@@ -919,7 +968,10 @@ export class SwaggerBuilder {
       };
     }
 
-    return { type: baseType };
+    return {
+      type: baseType,
+      ...(ruleInfo.defaultValue !== undefined ? { default: ruleInfo.defaultValue } : {}),
+    };
   }
 
   private mapTypeToSwagger(type: string) {
@@ -939,6 +991,72 @@ export class SwaggerBuilder {
     if (!jsDoc || jsDoc.length === 0) return '';
     const comment = jsDoc[0].comment;
     return typeof comment === 'string' ? comment : '';
+  }
+
+  private getJsDocTag(member: ts.PropertyDeclaration, tagName: string) {
+    const jsDoc = (member as any).jsDoc as ts.JSDoc[] | undefined;
+    if (!jsDoc || jsDoc.length === 0) return '';
+    const tags = jsDoc[0].tags as any;
+    if (!tags || !Array.isArray(tags)) return '';
+    const tag = tags.find((t: any) => String(t?.tagName?.text || '').toLowerCase() === tagName.toLowerCase());
+    const comment = tag?.comment;
+    return typeof comment === 'string' ? comment : '';
+  }
+
+  private extractDefaultFromRuleText(ruleText: string) {
+    if (!ruleText) return undefined;
+    const m = ruleText.match(/\.default\s*\(\s*([^)]*?)\s*\)/);
+    if (!m) return undefined;
+    return this.parseLiteralValue(m[1]);
+  }
+
+  private parseLiteralValue(text: string) {
+    const t = String(text ?? '').trim();
+    if (!t) return undefined;
+    if (t === 'null') return null;
+    if (t === 'true') return true;
+    if (t === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+    const quoted = t.match(/^(['"])([\s\S]*)\1$/);
+    if (quoted) return quoted[2];
+    try {
+      return JSON.parse(t);
+    } catch {
+      return t;
+    }
+  }
+
+  private extractDefaultFromInitializer(member: ts.PropertyDeclaration) {
+    const init = member.initializer;
+    if (!init) return undefined;
+    if (ts.isNumericLiteral(init)) return Number(init.text);
+    if (ts.isStringLiteral(init)) return init.text;
+    if (init.kind === ts.SyntaxKind.TrueKeyword) return true;
+    if (init.kind === ts.SyntaxKind.FalseKeyword) return false;
+    if (init.kind === ts.SyntaxKind.NullKeyword) return null;
+    if (ts.isArrayLiteralExpression(init)) return [];
+    if (ts.isObjectLiteralExpression(init)) return {};
+    return undefined;
+  }
+
+  private buildExampleFromSchema(dtoSchema: any) {
+    const props = dtoSchema?.properties || {};
+    const out: any = {};
+    for (const [k, v] of Object.entries<any>(props)) {
+      if (v && v.default !== undefined) {
+        out[k] = v.default;
+        continue;
+      }
+      if (v && v.example !== undefined) {
+        out[k] = v.example;
+        continue;
+      }
+      if (v?.type === 'integer' || v?.type === 'number') out[k] = 0;
+      else if (v?.type === 'boolean') out[k] = false;
+      else if (v?.type === 'array') out[k] = [];
+      else out[k] = '';
+    }
+    return out;
   }
 
   private getControllerPrefix(node: ts.ClassDeclaration, sourceFile: ts.SourceFile) {

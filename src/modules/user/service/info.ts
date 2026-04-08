@@ -11,6 +11,8 @@ import { UserRole } from '../../../comm/const';
 import { TeamInfoEntity } from '../../team/entity/info';
 import { TeamMemberEntity } from '../../team/entity/member';
 import { TeamInviteEntity } from '../../team/entity/invite';
+import { TeamInviteJoinEntity } from '../../team/entity/invite_join';
+import { TeamMemberService } from '../../team/service/member';
 import { PostInfoEntity } from '../../post/entity/info';
 import { UserWxEntity } from '../entity/wx';
 
@@ -39,6 +41,9 @@ export class UserInfoService extends BaseService {
 
   @Inject()
   coolEventManager: CoolEventManager;
+
+  @Inject()
+  teamMemberService: TeamMemberService;
 
   @Init()
   async init() {
@@ -87,6 +92,11 @@ export class UserInfoService extends BaseService {
     delete param.isManualRole;
     delete param.unionid; // 登录唯一ID由登录时生成，不可手动修改
 
+    // 如果提供了密码，进行 md5 加密
+    if (param.password) {
+      param.password = md5(param.password);
+    }
+
     // 如果角色变更，自动标记为人工指定
     if (role !== undefined && role !== user.role) {
       param.isManualRole = 1;
@@ -94,34 +104,13 @@ export class UserInfoService extends BaseService {
 
     // 2. 首个团队安全绑定
     if (firstTeamId && firstTeamId !== user.firstTeamId) {
-      const team = await this.teamInfoEntity.findOneBy({ id: firstTeamId });
-      if (!team) {
-        throw new CoolCommException('团队已解散或ID错误');
-      }
-
-      // 自动加入团队
-      const isMember = await this.teamMemberEntity.findOneBy({
+      const member = await this.teamMemberEntity.findOneBy({
         userId: id,
         teamId: firstTeamId,
       });
 
-      if (!isMember) {
-        await this.teamMemberEntity.save({
-          userId: id,
-          teamId: firstTeamId,
-          joinedAt: new Date(),
-          exitType: 0, // 在职
-        });
-      } else {
-        // 如果之前退出过，重新加入
-        if (isMember.exitType !== 0) {
-            await this.teamMemberEntity.update(isMember.id, {
-                exitType: 0,
-                joinedAt: new Date(),
-                leftAt: null,
-                operatorId: null
-            });
-        }
+      if (!member || member.exitType !== 0) {
+        await this.teamMemberService.join(id, firstTeamId);
       }
     }
 
@@ -162,6 +151,8 @@ export class UserInfoService extends BaseService {
     const postRepo = this.teamMemberEntity.manager.getRepository(PostInfoEntity);
     const inviteRepo =
       this.teamMemberEntity.manager.getRepository(TeamInviteEntity);
+    const inviteJoinRepo =
+      this.teamMemberEntity.manager.getRepository(TeamInviteJoinEntity);
     const user = await this.userInfoEntity.findOneBy({ id: userId });
     let inviter: any = null;
     if (user?.invitedBy) {
@@ -179,7 +170,7 @@ export class UserInfoService extends BaseService {
     const [teamCount, postCount, inviteJoinedCount] = await Promise.all([
       this.teamMemberEntity.count({ where: { userId, exitType: 0 } }),
       postRepo.count({ where: { userId } }),
-      inviteRepo.count({ where: { joinedUserId: userId } }),
+      inviteJoinRepo.count({ where: { userId } }),
     ]);
     return {
       teamCount,

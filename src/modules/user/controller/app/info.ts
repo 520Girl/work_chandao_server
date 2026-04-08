@@ -2,6 +2,7 @@
 import { CoolController, BaseController } from '@cool-midway/core';
 import { Body, Get, Inject, Post } from '@midwayjs/core';
 import { UserInfoService } from '../../service/info';
+import { UserLoginService } from '../../service/login';
 import { UserInfoEntity } from '../../entity/info';
 import { Validate } from '@midwayjs/validate';
 import {
@@ -24,6 +25,9 @@ export class AppUserInfoController extends BaseController {
 
   @Inject()
   userInfoService: UserInfoService;
+
+  @Inject()
+  userLoginService: UserLoginService;
 
   @Get('/person', { summary: '获取用户信息' })
   async person() {
@@ -51,7 +55,16 @@ export class AppUserInfoController extends BaseController {
 
   @Post('/logoff', { summary: '注销' })
   async logoff() {
+    const token = this.ctx.get('Authorization');
+    await this.userLoginService.logout(token);
     await this.userInfoService.logoff(this.ctx.user.id);
+    return this.ok();
+  }
+
+  @Post('/logout', { summary: '退出登录' })
+  async logout() {
+    const token = this.ctx.get('Authorization');
+    await this.userLoginService.logout(token);
     return this.ok();
   }
 

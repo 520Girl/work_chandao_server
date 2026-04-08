@@ -1,4 +1,4 @@
-import { Config, Inject, Provide } from '@midwayjs/core';
+import { Config, Inject, Provide, InjectClient } from '@midwayjs/core';
 import { BaseService, CoolCommException } from '@cool-midway/core';
 import { InjectEntityModel } from '@midwayjs/typeorm';
 import { Equal, Repository } from 'typeorm';
@@ -11,6 +11,7 @@ import { UserSmsService } from './sms';
 import { v1 as uuid } from 'uuid';
 import * as md5 from 'md5';
 import { PluginService } from '../../plugin/service/info';
+import { CachingFactory, MidwayCache } from '@midwayjs/cache-manager';
 
 /**
  * 登录
@@ -28,6 +29,9 @@ export class UserLoginService extends BaseService {
 
   @Config('module.user.jwt')
   jwtConfig;
+
+  @InjectClient(CachingFactory, 'default')
+  midwayCache: MidwayCache;
 
   @Inject()
   baseSysLoginService: BaseSysLoginService;
@@ -247,14 +251,45 @@ export class UserLoginService extends BaseService {
       if (!info['isRefresh']) {
         throw new CoolCommException('token类型非refreshToken');
       }
+      const userId = info['id'];
+      const logoutAt = await this.midwayCache.get(`user:logoutAt:${userId}`);
+      if (logoutAt) {
+        const logoutAtMs = Number(logoutAt);
+        const issuedAtMs =
+          typeof info['iat'] === 'number' ? info['iat'] * 1000 : 0;
+        if (issuedAtMs && issuedAtMs < logoutAtMs) {
+          throw new CoolCommException('登录失效~', 401);
+        }
+      }
       const userInfo = await this.userInfoEntity.findOneBy({
-        id: info['id'],
+        id: userId,
       });
       return this.token({ id: userInfo.id });
     } catch (e) {
       throw new CoolCommException(
         '刷新token失败，请检查refreshToken是否正确或过期'
       );
+    }
+  }
+
+  /**
+   * 退出登录：记录 logoutAt
+   * @param token 当前携带的 accessToken
+   */
+  async logout(token: string) {
+    if (!token) return;
+    try {
+      const info: any = jwt.verify(token, this.jwtConfig.secret);
+      const userId = info?.id;
+      if (!userId) return;
+
+      await this.midwayCache.set(
+        `user:logoutAt:${userId}`,
+        Date.now(),
+        this.jwtConfig.refreshExpire * 1000
+      );
+    } catch (e) {
+      // token 无效不影响退出流程
     }
   }
 

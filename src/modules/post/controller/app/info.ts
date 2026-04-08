@@ -26,7 +26,8 @@ export class AppPostInfoController extends BaseController {
         this.ctx.user.id,
         body.reportId,
         body.targetTeamId,
-        body.content
+        body.content,
+        body.userState
       )
     );
   }
@@ -34,9 +35,9 @@ export class AppPostInfoController extends BaseController {
   @Post('/manual', { summary: '手动发布动态' })
   @Validate()
   async manual(@Body() body: PostManualDTO) {
-    const { content, images, teamId } = body;
+    const { content, images, teamId, userState } = body;
     return this.ok(
-      await this.postInfoService.manual(this.ctx.user.id, content, images ?? [], teamId)
+      await this.postInfoService.manual(this.ctx.user.id, content, images ?? [], teamId, userState)
     );
   }
 
@@ -48,6 +49,12 @@ export class AppPostInfoController extends BaseController {
     return this.ok();
   }
 
+  @Get('/info', { summary: '动态详情' })
+  async info() {
+    const id = Number(this.ctx.query.id);
+    return this.ok(await this.postInfoService.appInfo(this.ctx.user.id, id));
+  }
+
   @Get('/feed', { summary: '动态流' })
   async feed(@Query('page') page: number = 1, @Query('size') size: number = 20) {
     return this.ok(await this.postInfoService.feed(this.ctx.user.id, page, size));
@@ -56,6 +63,11 @@ export class AppPostInfoController extends BaseController {
   @Get('/feed/teams', { summary: '团队动态流' })
   async feedTeams(@Query('page') page: number = 1, @Query('size') size: number = 20) {
     return this.ok(await this.postInfoService.feedTeams(this.ctx.user.id, page, size));
+  }
+
+  @Get('/feed/mixed', { summary: '融合动态流（动态+活动）' })
+  async feedMixed(@Query('page') page: number = 1, @Query('size') size: number = 20) {
+    return this.ok(await this.postInfoService.mixedFeed(this.ctx.user.id, page, size));
   }
 
   @Post('/like', { summary: '点赞' })

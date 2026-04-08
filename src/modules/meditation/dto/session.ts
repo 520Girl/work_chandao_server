@@ -13,7 +13,7 @@ export class MeditationStartDTO {
    * 设备序列号
    * @example "DEVICE-001"
    */
-  @Rule(RuleType.string().required())
+  @Rule(RuleType.string())
   sn: string;
 
   /**

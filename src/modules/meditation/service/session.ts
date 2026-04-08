@@ -42,8 +42,11 @@ export class MeditationSessionService extends BaseService {
    * 开始冥想
    */
   async start(userId: number, sn?: string, targetDuration?: number, type?: number) {
-    if (sn) {
-      // 有设备模式
+    const sessionType = type || (sn ? 1 : 2);
+    if (sessionType === 1) {
+      if (!sn) {
+        throw new CoolCommException('设备SN不能为空');
+      }
       const device = await this.deviceInfoEntity.findOneBy({ sn, userId });
       if (!device) {
         throw new CoolCommException('设备未绑定');
@@ -53,14 +56,19 @@ export class MeditationSessionService extends BaseService {
         const info = await this.deviceInfoService.getDeviceInfo(device.mac);
         const data = info?.data;
 
-        await this.deviceInfoEntity.update(device.id, { status: data?.status?.id, statusUpdateTime: new Date() });
-        
-        if (data?.status?.id != 1 && type === 1) {
+        await this.deviceInfoEntity.update(device.id, {
+          status: data?.status?.id,
+          statusUpdateTime: new Date(),
+        });
+
+        if (data?.status?.id != 1) {
           throw new CoolCommException(`设备状态:${data?.status?.name},时间:${data?.status?.since}`);
         }
       } catch (e) {
         throw new CoolCommException(e.message || '获取设备状态失败');
       }
+    } else {
+      sn = null;
     }
 
     const active = await this.meditationSessionEntity.findOneBy({
@@ -74,7 +82,7 @@ export class MeditationSessionService extends BaseService {
     const session = await this.meditationSessionEntity.save({
       userId,
       sn: sn || null,
-      type: type || (sn ? 1 : 2), // 优先使用传入的type，否则根据sn判断：1: 设备冥想, 2: 无设备冥想
+      type: sessionType,
       startDate: new Date(),
       status: 1,
       targetDuration: targetDuration || 0,

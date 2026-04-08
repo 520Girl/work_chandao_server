@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { TeamInfoEntity } from '../entity/info';
 import { TeamMemberEntity } from '../entity/member';
 import { UserInfoEntity } from '../../user/entity/info';
+import { TeamMemberService } from './member';
 
 /**
  * 团队信息服务
@@ -27,6 +28,9 @@ export class TeamInfoService extends BaseService {
 
   @Inject()
   coolEventManager: CoolEventManager;
+
+  @Inject()
+  teamMemberService: TeamMemberService;
 
   @Init()
   async init() {
@@ -95,47 +99,19 @@ export class TeamInfoService extends BaseService {
    * @param invitedBy 邀请人ID (可选)
    */
   async joinTeam(userId: number, teamId: number, invitedBy?: number) {
-    const team = await this.teamInfoEntity.findOneBy({ id: teamId });
-    if (!team) {
-      throw new CoolCommException('团队不存在');
-    }
-
-    // 检查是否已加入
     const exists = await this.teamMemberEntity.findOneBy({ userId, teamId });
-    if (exists) {
+    if (exists && exists.exitType === 0) {
       return exists;
     }
 
-    // 加入团队
-    const member = await this.teamMemberEntity.save({
-      userId,
-      teamId,
-      joinedAt: new Date(),
-    });
+    await this.teamMemberService.join(userId, teamId);
 
-    // 更新团队人数
-    await this.updateMemberCount(teamId, 1);
-
-    // 更新用户信息
-    const userUpdate: Partial<UserInfoEntity> = {};
     const user = await this.userInfoEntity.findOneBy({ id: userId });
-
-    if (user) {
-      // 如果没有归属团队，则设置为首个团队
-      if (!user.firstTeamId) {
-        userUpdate.firstTeamId = teamId;
-      }
-      // 如果有邀请人且当前没有邀请人，则记录邀请人
-      if (invitedBy && !user.invitedBy && invitedBy !== userId) {
-        userUpdate.invitedBy = invitedBy;
-      }
-
-      if (Object.keys(userUpdate).length > 0) {
-        await this.userInfoEntity.update(userId, userUpdate);
-      }
+    if (user && invitedBy && !user.invitedBy && invitedBy !== userId) {
+      await this.userInfoEntity.update(userId, { invitedBy });
     }
 
-    return member;
+    return await this.teamMemberEntity.findOneBy({ userId, teamId });
   }
 
   /**

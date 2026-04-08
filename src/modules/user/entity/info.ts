@@ -27,7 +27,7 @@ export class UserInfoEntity extends BaseEntity {
     comment: '角色',
     dict: ['未知', '成员', '组长', '营长', '团长', '超管'],
     default: 1,
-  })
+  })  
   role: number;
 
   @Column({ comment: '邀请人ID', nullable: true })

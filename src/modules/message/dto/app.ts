@@ -1,14 +1,17 @@
 import { Rule, RuleType } from '@midwayjs/validate';
 
 export class MessagePageDTO {
-  @Rule(RuleType.number().optional())
+  @Rule(RuleType.number().default(1).optional())
   page?: number;
 
-  @Rule(RuleType.number().optional())
+  @Rule(RuleType.number().default(20).optional())
   size?: number;
 
   @Rule(RuleType.number().optional())
   readStatus?: number;
+
+  @Rule(RuleType.number().optional())
+  senderType?: number;
 }
 
 export class MessageReadDTO {

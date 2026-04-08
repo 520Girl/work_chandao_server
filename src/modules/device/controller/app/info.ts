@@ -44,7 +44,13 @@ export class AppDeviceInfoController extends BaseController {
   @Validate()
   async deviceInfo(@Query() query: DeviceMacDTO) {
     const device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
-    return this.ok(await this.deviceInfoService.getDeviceInfo(device.mac));
+    const info = await this.deviceInfoService.getDeviceInfo(device.mac);
+    let data = info?.data ?? info;
+    if(data) {
+      data.status = {...data.status,model: data.model}
+      data = {...data, ...device, interface: data.status} ;
+    }
+    return this.ok(data);
   }
 
   @Post('/realtime', { summary: '设备实时数据' })

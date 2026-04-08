@@ -1,4 +1,4 @@
-import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
+import { ALL, Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { Validate } from '@midwayjs/validate';
 import { MessageInfoService } from '../../service/info';
@@ -19,16 +19,27 @@ export class AppMessageInfoController extends BaseController {
   @Inject()
   activityInfoService: ActivityInfoService;
 
-  @Get('/page', { summary: '消息分页' })
+  @Post('/page', { summary: '消息分页' })
   @Validate()
-  async pageList(@Query() query: MessagePageDTO) {
-    return this.ok(await this.messageInfoService.pageForUser(this.ctx.user.id, query));
-  }
-
-  @Get('/list', { summary: '消息列表(分页)' })
-  @Validate()
-  async listPage(@Query() query: MessagePageDTO) {
-    return this.ok(await this.messageInfoService.pageForUser(this.ctx.user.id, query));
+  async pageList(
+    @Body() body: MessagePageDTO,
+    @Query(ALL) query: Partial<MessagePageDTO>
+  ) {
+    const input: MessagePageDTO = {
+      page: body.page ?? (query.page as any),
+      size: body.size ?? (query.size as any),
+      readStatus:
+        body.readStatus != null
+          ? body.readStatus
+          : (query.readStatus as any),
+      senderType:
+        body.senderType != null
+          ? body.senderType
+          : (query.senderType as any),
+    };
+    return this.ok(
+      await this.messageInfoService.pageForUser(this.ctx.user.id, input)
+    );
   }
 
   @Get('/unread-count', { summary: '未读数量' })
@@ -90,7 +101,8 @@ export class AppMessageInfoController extends BaseController {
       return this.ok({ handled: false });
     }
 
-    if (String(bizType).startsWith('activity_')) {
+    const joinBizTypes = new Set(['activity_published', 'activity_assigned']);
+    if (joinBizTypes.has(String(bizType))) {
       await this.activityInfoService.joinActivity(userId, Number(bizId));
       await this.messageInfoService.markRead(userId, messageId);
       return this.ok({ handled: true, bizType, bizId });

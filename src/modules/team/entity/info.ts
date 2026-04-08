@@ -23,4 +23,7 @@ export class TeamInfoEntity extends BaseEntity {
 
   @Column({ comment: '成员总数', default: 0 })
   memberCount: number;
+
+  @Column({ comment: '成员上限（0表示不限制）', default: 0 })
+  maxMemberCount: number;
 }

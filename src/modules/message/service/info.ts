@@ -243,10 +243,11 @@ export class MessageInfoService extends BaseService {
     return msg;
   }
 
-  async pageForUser(userId: number, query: { page?: number; size?: number; readStatus?: number }) {
+  async pageForUser(userId: number, query: { page?: number; size?: number; readStatus?: number; senderType?: number }) {
     const page = Number(query?.page) > 0 ? Number(query.page) : 1;
     const size = Number(query?.size) > 0 ? Number(query.size) : 20;
     const readStatus = query?.readStatus == null ? null : Number(query.readStatus);
+    const senderType = query?.senderType == null ? null : Number(query.senderType);
 
     const qb = this.messageInfoEntity
       .createQueryBuilder('m')
@@ -261,6 +262,9 @@ export class MessageInfoService extends BaseService {
     }
     if (readStatus === 1) {
       qb.andWhere('mu.readStatus = 1');
+    }
+    if (senderType !== null) {
+      qb.andWhere('m.senderType = :senderType', { senderType });
     }
 
     qb.select([
@@ -305,6 +309,9 @@ export class MessageInfoService extends BaseService {
     }
     if (readStatus === 1) {
       countQb.andWhere('mu.readStatus = 1');
+    }
+    if (senderType !== null) {
+      countQb.andWhere('m.senderType = :senderType', { senderType });
     }
     const total = await countQb.getCount();
 

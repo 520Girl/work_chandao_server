@@ -101,7 +101,7 @@ export class ShopOrderService extends BaseService {
             ${this.setSql(keyWord, 'AND (a.orderNo LIKE ? OR b.name LIKE ?)', [`%${keyWord}%`, `%${keyWord}%`])}
         ORDER BY a.createTime DESC
     `;
-    return this.sqlRenderPage(sql, _.assign(query, { page, size }));
+    return this.sqlRenderPage(sql, _.assign(query, { page, size }), false);
   }
 
   /**

@@ -68,6 +68,13 @@ export class ActivityCreateDTO {
    */
   @Rule(RuleType.number().optional())
   teamId?: number | null;
+
+  /**
+   * 打卡模式 1每日打卡 2仅一次
+   * @example 1
+   */
+  @Rule(RuleType.number().valid(1, 2))
+  checkinMode?: number;
 }
 
 /**
@@ -159,6 +166,13 @@ export class ActivityUpdateDTO {
    */
   @Rule(RuleType.number().optional())
   tenantId?: number;
+
+  /**
+   * 打卡模式 1每日打卡 2仅一次
+   * @example 1
+   */
+  @Rule(RuleType.number().valid(1, 2))
+  checkinMode?: number;
 }
 
 /**

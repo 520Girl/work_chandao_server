@@ -19,7 +19,7 @@ export class ShopOrderEntity extends BaseEntity {
 
   @Column({
     comment: '状态',
-    dict: ['未知', '待支付', '待发货', '已发货', '已完成'],
+    dict: ['未知', '待支付', '待发货', '已发货', '已完成', '已取消'],
     default: 1,
   })
   status: number;

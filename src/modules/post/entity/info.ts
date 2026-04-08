@@ -27,6 +27,9 @@ export class PostInfoEntity extends BaseEntity {
   @Column({ comment: '图片列表', type: 'json', nullable: true })
   images: string[];
 
+  @Column({ comment: '用户状态', default: 1 })
+  userState: number;
+
   @Column({
     comment: '状态',
     dict: ['未知', '待审核', '已发布', '拒绝'],

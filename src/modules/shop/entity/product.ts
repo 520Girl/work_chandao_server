@@ -9,6 +9,9 @@ export class ShopProductEntity extends BaseEntity {
   @Column({ comment: '名称' })
   name: string;
 
+  @Column({ comment: '简介', type: 'text', nullable: true })
+  intro: string;
+
   @Column({
     comment: '价格',
     type: 'decimal',

@@ -12,6 +12,7 @@ import { Inject } from '@midwayjs/core';
 import { join } from 'path';
 import { pUploadPath } from '../../../comm/path';
 import { PluginService } from '../../plugin/service/info';
+import { ActivityInfoEntity } from '../../activity/entity/info';
 
 /**
  * 社区动态服务
@@ -35,6 +36,9 @@ export class PostInfoService extends BaseService {
 
   @InjectEntityModel(TeamMemberEntity)
   teamMemberEntity: Repository<TeamMemberEntity>;
+
+  @InjectEntityModel(ActivityInfoEntity)
+  activityInfoEntity: Repository<ActivityInfoEntity>;
 
   @Inject()
   coolEventManager: CoolEventManager;
@@ -63,6 +67,16 @@ export class PostInfoService extends BaseService {
   private async isUserInTeam(userId: number, teamId: number): Promise<boolean> {
     const m = await this.teamMemberEntity.findOneBy({ userId, teamId });
     return !!m;
+  }
+
+  private async getUserActiveTeamIds(userId: number): Promise<number[]> {
+    const memberships = await this.teamMemberEntity.findBy({ userId, exitType: 0 } as any);
+    let teamIds = memberships.map((m) => m.teamId);
+    const user = await this.userInfoEntity.findOneBy({ id: userId });
+    if (user?.firstTeamId && !teamIds.includes(user.firstTeamId)) {
+      teamIds = [...teamIds, user.firstTeamId];
+    }
+    return [...new Set(teamIds.filter((id) => Number(id) > 0))];
   }
 
   /**
@@ -161,7 +175,8 @@ export class PostInfoService extends BaseService {
     userId: number,
     reportId: number,
     targetTeamId?: number | null,
-    content?: string
+    content?: string,
+    userState?: number
   ) {
     const userTeamId = await this.getUserTeamId(userId);
     if (!userTeamId) {
@@ -196,6 +211,7 @@ export class PostInfoService extends BaseService {
       teamId,
       content: finalContent,
       images: imageUrl ? [imageUrl] : [],
+      userState: Number(userState) > 0 ? Number(userState) : 1,
       status,
     });
   }
@@ -204,7 +220,13 @@ export class PostInfoService extends BaseService {
    * 手动发布（所有成员可发布）
    * @param teamId 可选，指定团队；未传入时默认需管理员审核
    */
-  async manual(userId: number, content: string, images: string[], teamId?: number | null) {
+  async manual(
+    userId: number,
+    content: string,
+    images: string[],
+    teamId?: number | null,
+    userState?: number
+  ) {
     const userTeamId = await this.getUserTeamId(userId);
     if (!userTeamId) {
       throw new CoolCommException('您还未加入任何社群，请先加入社群');
@@ -228,6 +250,7 @@ export class PostInfoService extends BaseService {
       teamId: finalTeamId,
       content,
       images: images || [],
+      userState: Number(userState) > 0 ? Number(userState) : 1,
       status,
     });
   }
@@ -272,6 +295,62 @@ export class PostInfoService extends BaseService {
     }
     await this.postLikeEntity.insert({ userId, postId });
     this.coolEventManager.emit('postLiked', post.userId);
+  }
+
+  /**
+   * App 动态详情（含作者信息、点赞数、当前用户是否已点赞）
+   */
+  async appInfo(userId: number, id: number) {
+    const rows: any[] = await this.postInfoEntity.manager.query(
+      `
+      SELECT
+        p.*,
+        u.nickName AS nickName,
+        u.avatarUrl AS avatarUrl,
+        (SELECT COUNT(1) FROM post_like pl WHERE pl.postId = p.id) AS likeCount,
+        IF(
+          EXISTS(
+            SELECT 1
+            FROM post_like plu
+            WHERE plu.postId = p.id
+              AND plu.userId = ?
+          ),
+          1,
+          0
+        ) AS isLiked
+      FROM post_info p
+      LEFT JOIN user_info u ON u.id = p.userId
+      WHERE p.id = ?
+        AND p.status = 2
+      LIMIT 1
+      `,
+      [Number(userId), Number(id)]
+    );
+    const row = rows?.[0];
+    if (!row) {
+      throw new CoolCommException('动态不存在');
+    }
+    if (row.teamId) {
+      const inTeam = await this.teamMemberEntity.findOneBy({
+        userId,
+        teamId: Number(row.teamId),
+        exitType: 0,
+      } as any);
+      if (!inTeam && Number(row.userId) !== Number(userId)) {
+        throw new CoolCommException('仅社群成员可查看');
+      }
+    }
+
+    if (row && typeof row.images === 'string') {
+      try {
+        row.images = JSON.parse(row.images);
+      } catch {}
+    }
+    if (!Array.isArray(row.images)) row.images = row.images ? [row.images] : [];
+
+    row.likeCount = Number(row.likeCount ?? 0);
+    row.isLiked = Number(row.isLiked ?? 0) === 1;
+    return row;
   }
 
   /**
@@ -328,6 +407,154 @@ export class PostInfoService extends BaseService {
         (p as any).avatarUrl = u?.avatarUrl;
       });
     }
+    return { list, pagination: { page, size, total } };
+  }
+
+  async mixedFeed(userId: number, page: number = 1, size: number = 20) {
+    const teamIds = await this.getUserActiveTeamIds(userId);
+    const offset = (page - 1) * size;
+
+    const baseParams: any[] = [];
+
+    const postWhere =
+      teamIds.length > 0 ? `p.teamId IN (${teamIds.map(() => '?').join(',')})` : '1=0';
+    baseParams.push(userId);
+    if (teamIds.length > 0) baseParams.push(...teamIds);
+
+    const activityWhere =
+      teamIds.length > 0
+        ? `(a.teamId IS NULL OR a.teamId IN (${teamIds.map(() => '?').join(',')}))`
+        : 'a.teamId IS NULL';
+    baseParams.push(userId);
+    if (teamIds.length > 0) baseParams.push(...teamIds);
+
+    const unionSql = `
+      SELECT *
+      FROM (
+        SELECT
+          'post' AS itemType,
+          p.id AS id,
+          p.updateTime AS sortTime,
+          0 AS isTop,
+          p.teamId AS teamId,
+          p.userId AS userId,
+          u.nickName AS nickName,
+          u.avatarUrl AS avatarUrl,
+          p.type AS postType,
+          p.userState AS userState,
+          p.content AS content,
+          p.images AS images,
+          IFNULL(pl.likeCount, 0) AS likeCount,
+          IF(
+            EXISTS(
+              SELECT 1
+              FROM post_like plu
+              WHERE plu.postId = p.id
+                AND plu.userId = ?
+            ),
+            1,
+            0
+          ) AS isLiked,
+          NULL AS participantCount,
+          NULL AS participantUsers,
+          NULL AS isJoined,
+          NULL AS activityTitle,
+          NULL AS activityStartDate,
+          NULL AS activityEndDate,
+          NULL AS activityTemplateName,
+          NULL AS activityTemplateIcon
+        FROM post_info p
+        LEFT JOIN user_info u ON p.userId = u.id
+        LEFT JOIN (
+          SELECT postId, COUNT(1) AS likeCount
+          FROM post_like
+          GROUP BY postId
+        ) pl ON pl.postId = p.id
+        WHERE p.status = 2 AND ${postWhere}
+        UNION ALL
+        SELECT
+          'activity' AS itemType,
+          a.id AS id,
+          COALESCE(a.startDate, a.createTime) AS sortTime,
+          a.isTop AS isTop,
+          a.teamId AS teamId,
+          a.authorId AS userId,
+          NULL AS nickName,
+          NULL AS avatarUrl,
+          NULL AS postType,
+          NULL AS userState,
+          a.content AS content,
+          NULL AS images,
+          NULL AS likeCount,
+          NULL AS isLiked,
+          IFNULL(pa.participantCount, 0) AS participantCount,
+          IFNULL(pa.participantNames, '') AS participantUsers,
+          IF(
+            EXISTS(
+              SELECT 1
+              FROM activity_participation apu
+              WHERE apu.activityId = a.id
+                AND apu.userId = ?
+                AND apu.status <> 3
+            ),
+            1,
+            0
+          ) AS isJoined,
+          a.title AS activityTitle,
+          a.startDate AS activityStartDate,
+          a.endDate AS activityEndDate,
+          t.name AS activityTemplateName,
+          t.icon AS activityTemplateIcon
+        FROM activity_info a
+        LEFT JOIN activity_template t ON a.templateId = t.id
+        LEFT JOIN (
+          SELECT
+            ap.activityId AS activityId,
+            COUNT(1) AS participantCount,
+            SUBSTRING_INDEX(
+              GROUP_CONCAT(IFNULL(u.nickName, '') ORDER BY ap.applyTime DESC, ap.id DESC SEPARATOR ','),
+              ',',
+              5
+            ) AS participantNames
+          FROM activity_participation ap
+          LEFT JOIN user_info u ON ap.userId = u.id
+          WHERE ap.status <> 3
+          GROUP BY ap.activityId
+        ) pa ON pa.activityId = a.id
+        WHERE a.status = 2
+          AND (a.endDate IS NULL OR a.endDate >= NOW())
+          AND ${activityWhere}
+      ) x
+    `;
+
+    const countSql = `SELECT COUNT(1) as total FROM (${unionSql}) c`;
+    const countRes: any[] = await this.postInfoEntity.manager.query(countSql, baseParams);
+    const total = Number(countRes?.[0]?.total ?? 0);
+
+    const listSql = `${unionSql} ORDER BY isTop DESC, sortTime DESC, id DESC LIMIT ? OFFSET ?`;
+    const listParams = [...baseParams, Number(size), Number(offset)];
+    const list = await this.postInfoEntity.manager.query(listSql, listParams);
+
+    for (const row of list) {
+      if (row && typeof row.images === 'string') {
+        try {
+          row.images = JSON.parse(row.images);
+        } catch {}
+      }
+      if (row?.itemType === 'activity') {
+        row.participantCount = Number(row.participantCount ?? 0);
+        if (typeof row.participantUsers === 'string') {
+          const s = row.participantUsers.trim();
+          row.participantUsers = s ? s.split(',').filter(Boolean).slice(0, 5) : [];
+        } else if (!Array.isArray(row.participantUsers)) {
+          row.participantUsers = [];
+        }
+        row.isJoined = Number(row.isJoined ?? 0) === 1;
+      } else if (row?.itemType === 'post') {
+        row.isLiked = Number(row.isLiked ?? 0) === 1;
+      }
+    }
+
     return { list, pagination: { page, size, total } };
   }
 

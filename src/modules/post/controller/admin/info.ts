@@ -62,6 +62,17 @@ export class AdminPostInfoController extends BaseController {
     return this.ok();
   }
 
+  @Post('/update', { summary: '更新动态（禁止修改 userState）' })
+  async update(@Body() body: any = {}) {
+    const id = Number(body?.id);
+    if (!id) return this.fail('缺少 id');
+    delete body.userState;
+    delete body.likeCount;
+    delete body.likeUsers;
+    await this.postInfoService.postInfoEntity.update(id, body);
+    return this.ok();
+  }
+
   @Post('/getLikeUsers', { summary: '获取点赞用户列表' })
   async getLikeUsers(@Body() body: { postId: number }) {
     const list = await this.postInfoService.getLikeUsers(body.postId);

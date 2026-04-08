@@ -45,6 +45,11 @@ export class TeamMemberService extends BaseService {
         if (member.exitType === 0) {
           throw new CoolCommException('您已是该团队成员，无需重复加入');
         }
+        if (Number(team.maxMemberCount) > 0 && Number(team.memberCount) >= Number(team.maxMemberCount)) {
+          throw new CoolCommException(
+            `团队成员已达上限（${team.maxMemberCount}人），暂无法加入`
+          );
+        }
         // 重新加入
         await manager.update(TeamMemberEntity, member.id, {
           exitType: 0,
@@ -53,6 +58,11 @@ export class TeamMemberService extends BaseService {
           operatorId: null,
         });
       } else {
+        if (Number(team.maxMemberCount) > 0 && Number(team.memberCount) >= Number(team.maxMemberCount)) {
+          throw new CoolCommException(
+            `团队成员已达上限（${team.maxMemberCount}人），暂无法加入`
+          );
+        }
         await manager.save(TeamMemberEntity, {
           userId,
           teamId,
