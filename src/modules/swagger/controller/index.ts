@@ -1,4 +1,4 @@
-import { Config, Controller, Get, Inject } from '@midwayjs/core';
+import { Config, Controller, Get, Inject, Query } from '@midwayjs/core';
 import { Context } from '@midwayjs/koa';
 import { SwaggerBuilder } from '../builder';
 import { BaseController } from '@cool-midway/core';
@@ -25,12 +25,28 @@ export class SwaggerIndexController extends BaseController {
     await this.ctx.render('swagger', {});
   }
 
-  @Get('/json', { summary: '获得Swagger JSON数据' })
-  public async json() {
+  @Get('/json/admin', { summary: 'Swagger JSON（仅管理端 /admin）' })
+  public async jsonAdmin() {
     if (!this.epsConfig) {
       return this.fail('Eps未开启');
     }
-    return this.swaggerBuilder.json;
+    return this.swaggerBuilder.getJson('admin');
+  }
+
+  @Get('/json/app', { summary: 'Swagger JSON（仅用户端 /app）' })
+  public async jsonApp() {
+    if (!this.epsConfig) {
+      return this.fail('Eps未开启');
+    }
+    return this.swaggerBuilder.getJson('app');
+  }
+
+  @Get('/json', { summary: 'Swagger JSON；Query: scope=all|admin|app，默认 all' })
+  public async json(@Query('scope') scope?: string) {
+    if (!this.epsConfig) {
+      return this.fail('Eps未开启');
+    }
+    return this.swaggerBuilder.getJson(scope);
   }
 
   @Get('/socket/json', { summary: 'Socket 接口 JSON 文档' })

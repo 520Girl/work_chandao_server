@@ -42,7 +42,7 @@ export class AdminActivityInfoController extends BaseController {
   activityInfoService: ActivityInfoService;
 
   @Post('/info', { summary: '活动详情（含模板名、团队名）' })
-  async info(@Body() body: any) {
+  async activityDetail(@Body() body: any) {
     const id = body?.id ?? body;
     if (id == null) return this.fail('缺少 id');
     const row = await this.activityInfoService.getInfoWithJoin(Number(id));

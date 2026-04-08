@@ -437,8 +437,9 @@ export class SwaggerBuilder {
         };
       }
     }
-    // 处理每个模块下的API接口
-    function processModuleApis(moduleApis, moduleName) {
+    // 处理每个模块下的API接口（surfaceLabel：管理端 / 用户端，便于 Swagger 分组与摘要区分）
+    function processModuleApis(moduleApis, moduleName, surfaceLabel: string) {
+      const tagLabel = `${surfaceLabel} · ${moduleName || '其他'}`;
       moduleApis.forEach(module => {
         const schemas = addComponentSchemas({
           name: module.name,
@@ -455,10 +456,10 @@ export class SwaggerBuilder {
               swagger.paths[fullPath] = {};
             }
 
+            const typeLabel =
+              module.info.type.description || module.info.type.name || '';
             swagger.paths[fullPath][method] = {
-              summary:
-                `【${module.info.type.description || module.info.type.name}】` +
-                  api.summary || '',
+              summary: `【${surfaceLabel}】【${typeLabel}】${api.summary || ''}`,
               security: api.ignoreToken
                 ? []
                 : [
@@ -466,7 +467,7 @@ export class SwaggerBuilder {
                       ApiKeyAuth: [],
                     },
                   ],
-              tags: [moduleName || '其他'],
+              tags: [tagLabel],
               requestBody:
                 method == 'post'
                   ? {
@@ -509,12 +510,13 @@ export class SwaggerBuilder {
       });
     }
 
-    // 遍历app和admin中的所有模块
+    // 遍历 app / admin（EPS 已按端拆分，标签与摘要中显式标注）
     Object.keys(dataJson.app).forEach(moduleKey => {
       if (Array.isArray(dataJson.app[moduleKey])) {
         processModuleApis(
           dataJson.app[moduleKey],
-          dataJson.module[moduleKey]?.name
+          dataJson.module[moduleKey]?.name,
+          '用户端'
         );
       }
     });
@@ -522,12 +524,62 @@ export class SwaggerBuilder {
       if (Array.isArray(dataJson.admin[moduleKey])) {
         processModuleApis(
           dataJson.admin[moduleKey],
-          dataJson.module[moduleKey]?.name
+          dataJson.module[moduleKey]?.name,
+          '管理端'
         );
       }
     });
 
     return swagger;
+  }
+
+  /**
+   * 获取 Swagger 文档；scope 为 admin / app 时仅保留对应路径前缀（/admin、/app）
+   */
+  getJson(scope?: string) {
+    const doc = this.json as Record<string, any>;
+    if (!doc?.paths || _.isEmpty(doc.paths)) {
+      return doc;
+    }
+    const s = (scope || 'all').toLowerCase();
+    if (s !== 'admin' && s !== 'app') {
+      return doc;
+    }
+    return this.filterSwaggerPaths(doc, s as 'admin' | 'app');
+  }
+
+  private filterSwaggerPaths(
+    doc: Record<string, any>,
+    surface: 'admin' | 'app'
+  ) {
+    const prefix = surface === 'admin' ? '/admin' : '/app';
+    const clone = _.cloneDeep(doc);
+    const nextPaths: Record<string, any> = {};
+    for (const p of Object.keys(clone.paths)) {
+      if (p.startsWith(prefix)) {
+        nextPaths[p] = clone.paths[p];
+      }
+    }
+    clone.paths = nextPaths;
+    const surfaceTitle = surface === 'admin' ? '管理端' : '用户端';
+    clone.info = {
+      ...clone.info,
+      title: `${clone.info?.title || 'API'}（${surfaceTitle}）`,
+    };
+    const used = new Set<string>();
+    for (const methods of Object.values(nextPaths)) {
+      for (const op of Object.values(methods as Record<string, any>)) {
+        if (op?.tags?.length) {
+          op.tags.forEach((t: string) => used.add(t));
+        }
+      }
+    }
+    if (Array.isArray(clone.tags)) {
+      clone.tags = clone.tags.filter((t: { name?: string }) =>
+        used.has(t?.name)
+      );
+    }
+    return clone;
   }
 
   private getSwaggerMeta() {
