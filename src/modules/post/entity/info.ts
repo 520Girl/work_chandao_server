@@ -27,6 +27,12 @@ export class PostInfoEntity extends BaseEntity {
   @Column({ comment: '图片列表', type: 'json', nullable: true })
   images: string[];
 
+  @Column({ comment: '省份(展示用)', nullable: true })
+  province: string;
+
+  @Column({ comment: '城市(展示用)', nullable: true })
+  city: string;
+
   @Column({ comment: '用户状态', default: 1 })
   userState: number;
 

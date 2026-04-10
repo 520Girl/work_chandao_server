@@ -98,4 +98,11 @@ export default {
     },
     syncInterval: 5000,
   },
+  geo: {
+    provider: 'tencent',
+    tencent: {
+      key: '',
+    },
+    cacheTtlSeconds: 86400,
+  },
 } as MidwayConfig;

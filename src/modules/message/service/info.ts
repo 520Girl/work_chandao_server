@@ -249,6 +249,26 @@ export class MessageInfoService extends BaseService {
     const readStatus = query?.readStatus == null ? null : Number(query.readStatus);
     const senderType = query?.senderType == null ? null : Number(query.senderType);
 
+    const statsQb = this.messageInfoEntity
+      .createQueryBuilder('m')
+      .leftJoin(MessageUserEntity, 'mu', 'mu.messageId = m.id AND mu.userId = :userId', { userId })
+      .where('(m.targetType = 0 OR mu.userId = :userId)', { userId })
+      .andWhere('(mu.deleteStatus IS NULL OR mu.deleteStatus = 0)');
+
+    const stats = await statsQb
+      .select('COUNT(1)', 'total')
+      .addSelect('SUM(CASE WHEN mu.readStatus = 1 THEN 1 ELSE 0 END)', 'readCount')
+      .addSelect('SUM(CASE WHEN (mu.readStatus IS NULL OR mu.readStatus = 0) THEN 1 ELSE 0 END)', 'unreadCount')
+      .addSelect('SUM(CASE WHEN m.senderType = 0 THEN 1 ELSE 0 END)', 'systemCount')
+      .getRawOne();
+
+    const counts = {
+      total: Number(stats?.total ?? 0),
+      read: Number(stats?.readCount ?? 0),
+      unread: Number(stats?.unreadCount ?? 0),
+      system: Number(stats?.systemCount ?? 0),
+    };
+
     const qb = this.messageInfoEntity
       .createQueryBuilder('m')
       .leftJoin(MessageUserEntity, 'mu', 'mu.messageId = m.id AND mu.userId = :userId', { userId })
@@ -272,27 +292,27 @@ export class MessageInfoService extends BaseService {
       'm.title as title',
       'm.content as content',
       'm.contentType as contentType',
-      'm.contentData as contentData',
       'm.templateKey as templateKey',
       'm.bizType as bizType',
       'm.bizId as bizId',
       'm.targetType as targetType',
       'm.teamId as teamId',
+      'm.senderType as senderType',
       'm.sendTime as sendTime',
       'm.createTime as createTime',
       'mu.readStatus as readStatus',
       'mu.readTime as readTime',
     ])
-      .orderBy('m.id', 'DESC')
+      .orderBy(
+        'CASE WHEN ((m.targetType = 0 AND (mu.id IS NULL OR mu.readStatus = 0)) OR (m.targetType != 0 AND mu.readStatus = 0)) THEN 0 ELSE 1 END',
+        'ASC'
+      )
+      .addOrderBy('m.sendTime', 'DESC')
+      .addOrderBy('m.id', 'DESC')
       .offset((page - 1) * size)
       .limit(size);
 
     const list = (await qb.getRawMany()).map((row: any) => {
-      if (row && typeof row.contentData === 'string') {
-        try {
-          row.contentData = JSON.parse(row.contentData);
-        } catch (e) {}
-      }
       if (row && row.readStatus == null) row.readStatus = 0;
       return row;
     });
@@ -317,8 +337,49 @@ export class MessageInfoService extends BaseService {
 
     return {
       list,
+      counts,
       pagination: { page, size, total },
     };
+  }
+
+  async infoForUser(userId: number, messageId: number) {
+    const id = Number(messageId);
+    if (!id || id <= 0) return null;
+
+    const qb = this.messageInfoEntity
+      .createQueryBuilder('m')
+      .leftJoin(MessageUserEntity, 'mu', 'mu.messageId = m.id AND mu.userId = :userId', { userId })
+      .where('m.id = :id', { id })
+      .andWhere('(m.targetType = 0 OR mu.userId = :userId)', { userId })
+      .andWhere('(mu.deleteStatus IS NULL OR mu.deleteStatus = 0)')
+      .select([
+        'm.id as id',
+        'm.title as title',
+        'm.content as content',
+        'm.contentType as contentType',
+        'm.contentData as contentData',
+        'm.templateKey as templateKey',
+        'm.bizType as bizType',
+        'm.bizId as bizId',
+        'm.targetType as targetType',
+        'm.teamId as teamId',
+        'm.senderType as senderType',
+        'm.senderId as senderId',
+        'm.sendTime as sendTime',
+        'm.createTime as createTime',
+        'mu.readStatus as readStatus',
+        'mu.readTime as readTime',
+      ]);
+
+    const row: any = await qb.getRawOne();
+    if (!row) return null;
+    if (row.readStatus == null) row.readStatus = 0;
+    if (row && typeof row.contentData === 'string') {
+      try {
+        row.contentData = JSON.parse(row.contentData);
+      } catch (e) {}
+    }
+    return row;
   }
 
   async unreadCount(userId: number) {

@@ -15,6 +15,7 @@ import { TeamInviteJoinEntity } from '../../team/entity/invite_join';
 import { TeamMemberService } from '../../team/service/member';
 import { PostInfoEntity } from '../../post/entity/info';
 import { UserWxEntity } from '../entity/wx';
+import { GeoService } from '../../base/service/geo';
 
 /**
  * 用户信息服务
@@ -45,10 +46,31 @@ export class UserInfoService extends BaseService {
   @Inject()
   teamMemberService: TeamMemberService;
 
+  @Inject()
+  geoService: GeoService;
+
   @Init()
   async init() {
     await super.init();
     this.setEntity(this.userInfoEntity);
+  }
+
+  async reportLocation(userId: number, body: any) {
+    let province = body?.province != null ? String(body.province).trim() : '';
+    let city = body?.city != null ? String(body.city).trim() : '';
+    const lat = body?.lat != null ? Number(body.lat) : null;
+    const lng = body?.lng != null ? Number(body.lng) : null;
+    if ((!province || !city) && lat != null && lng != null) {
+      try {
+        const geo = await this.geoService.reverseGeocode(lat, lng);
+        if (geo?.province && !province) province = String(geo.province);
+        if (geo?.city && !city) city = String(geo.city);
+      } catch {}
+    }
+    const update: any = { lastLocationTime: new Date() };
+    if (province) update.lastProvince = province;
+    if (city) update.lastCity = city;
+    await this.userInfoEntity.update(userId, update);
   }
 
   /**

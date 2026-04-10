@@ -44,4 +44,13 @@ export class UserInfoEntity extends BaseEntity {
 
   @Column({ comment: '状态', dict: ['禁用', '正常', '已注销'], default: 1 })
   status: number;
+
+  @Column({ comment: '最近省份(展示用)', nullable: true })
+  lastProvince: string;
+
+  @Column({ comment: '最近城市(展示用)', nullable: true })
+  lastCity: string;
+
+  @Column({ comment: '最近位置更新时间', nullable: true })
+  lastLocationTime: Date;
 }

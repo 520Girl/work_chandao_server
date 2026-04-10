@@ -37,3 +37,8 @@ export class MessageActionDTO {
   @Rule(RuleType.number().optional())
   bizId?: number;
 }
+
+export class MessageInfoDTO {
+  @Rule(RuleType.number().required())
+  messageId: number;
+}

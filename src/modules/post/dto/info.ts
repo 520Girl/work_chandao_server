@@ -37,6 +37,15 @@ export class PostShareDTO {
    */
   @Rule(RuleType.number().default(1).optional())
   userState?: number;
+
+  @Rule(RuleType.number())
+  lat?: number;
+
+  @Rule(RuleType.number())
+  lng?: number;
+
+  @Rule(RuleType.number())
+  accuracy?: number;
 }
 
 /**
@@ -76,6 +85,22 @@ export class PostManualDTO {
    */
   @Rule(RuleType.number().default(1).optional())
   userState?: number;
+
+  /**
+   * 状态：1待审核 2已发布（仅用于控制是否进入动态流；3拒绝仅后台使用）
+   * @example 2
+   */
+  @Rule(RuleType.number().valid(1, 2))
+  status?: number;
+
+  @Rule(RuleType.number())
+  lat?: number;
+
+  @Rule(RuleType.number())
+  lng?: number;
+
+  @Rule(RuleType.number())
+  accuracy?: number;
 }
 
 /**

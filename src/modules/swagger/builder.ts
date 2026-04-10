@@ -302,7 +302,10 @@ export class SwaggerBuilder {
           },
         };
       }
-      if (path == '/delete') {
+      if (
+        path == '/delete' &&
+        !(requestMeta && swaggerMeta.dtoSchemas[requestMeta.schemaName])
+      ) {
         data.requestBody = {
           description: schemas,
           required: true,
@@ -373,11 +376,11 @@ export class SwaggerBuilder {
         method === 'get' &&
         requestMeta &&
         swaggerMeta.dtoSchemas[requestMeta.schemaName] &&
-        (_.isEmpty(data.parameters) || !Array.isArray(data.parameters))
+        (Array.isArray(data.parameters) || _.isEmpty(data.parameters))
       ) {
         const dtoSchema = swaggerMeta.dtoSchemas[requestMeta.schemaName];
         const requiredSet = new Set<string>(dtoSchema.required || []);
-        data.parameters = Object.entries(dtoSchema.properties || {}).map(
+        const dtoParams = Object.entries(dtoSchema.properties || {}).map(
           ([name, propSchema]: [string, any]) => ({
             name,
             in: 'query',
@@ -390,6 +393,18 @@ export class SwaggerBuilder {
             ...(propSchema.example !== undefined ? { example: propSchema.example } : {}),
           })
         );
+        if (_.isEmpty(data.parameters) || !Array.isArray(data.parameters)) {
+          data.parameters = dtoParams;
+        } else {
+          const exists = new Set<string>(
+            (data.parameters as any[]).map(p => String(p?.name ?? ''))
+          );
+          dtoParams.forEach(p => {
+            if (!exists.has(String(p.name))) {
+              (data.parameters as any[]).push(p);
+            }
+          });
+        }
       }
 
       if (
@@ -1120,7 +1135,8 @@ export class SwaggerBuilder {
       const decorators = this.getDecorators(param);
       const hasBody = decorators.some(decorator => {
         if (!ts.isCallExpression(decorator.expression)) return false;
-        return decorator.expression.expression.getText(sourceFile) === 'Body';
+        const name = decorator.expression.expression.getText(sourceFile);
+        return name === 'Body' || name === 'Query';
       });
       if (!hasBody || !param.type) continue;
 

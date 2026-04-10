@@ -49,6 +49,21 @@ export class ActivityCreateDTO {
   content?: string;
 
   /**
+   * 禅修目标时长(秒)
+   * checkinMode=1 表示每日目标；checkinMode=2 表示总目标
+   * @example 1800
+   */
+  @Rule(RuleType.number().min(0))
+  targetMeditationSeconds?: number;
+
+  /**
+   * 达标百分比(0-100)
+   * @example 80
+   */
+  @Rule(RuleType.number().min(0).max(100))
+  passPercent?: number;
+
+  /**
    * 是否置顶（0 否 1 是）
    * @example 1
    */
@@ -66,7 +81,7 @@ export class ActivityCreateDTO {
    * 团队ID，null 为全局活动
    * @example 1
    */
-  @Rule(RuleType.number().optional())
+  @Rule(RuleType.number().allow(null).optional())
   teamId?: number | null;
 
   /**
@@ -134,6 +149,21 @@ export class ActivityUpdateDTO {
   content?: string;
 
   /**
+   * 禅修目标时长(秒)
+   * checkinMode=1 表示每日目标；checkinMode=2 表示总目标
+   * @example 1800
+   */
+  @Rule(RuleType.number().min(0))
+  targetMeditationSeconds?: number;
+
+  /**
+   * 达标百分比(0-100)
+   * @example 80
+   */
+  @Rule(RuleType.number().min(0).max(100))
+  passPercent?: number;
+
+  /**
    * 是否置顶（0 否 1 是）
    * @example 0
    */
@@ -158,7 +188,7 @@ export class ActivityUpdateDTO {
    * 团队ID，null 为全局活动（仅发布且未过期活动可分配）
    * @example 1
    */
-  @Rule(RuleType.number().optional())
+  @Rule(RuleType.number().allow(null).optional())
   teamId?: number | null;
 
   /**

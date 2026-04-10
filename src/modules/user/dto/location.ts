@@ -1,25 +1,6 @@
 import { Rule, RuleType } from '@midwayjs/validate';
 
-/**
- * 参加活动请求
- * @example
- * {
- *   "id": 1
- * }
- */
-export class ActivityJoinDTO {
-  /**
-   * 活动ID
-   * @example 1
-   */
-  @Rule(RuleType.number().required())
-  id: number;
-}
-
-export class ActivityCheckinDTO {
-  @Rule(RuleType.number().required())
-  id: number;
-
+export class UserLocationReportDTO {
   @Rule(RuleType.number())
   lat?: number;
 
@@ -34,4 +15,15 @@ export class ActivityCheckinDTO {
 
   @Rule(RuleType.string())
   city?: string;
+
+  @Rule(RuleType.string())
+  scene?: string;
+}
+
+export class UserLocationReverseDTO {
+  @Rule(RuleType.number().required())
+  lat: number;
+
+  @Rule(RuleType.number().required())
+  lng: number;
 }

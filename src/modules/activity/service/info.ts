@@ -6,10 +6,15 @@ import { Repository } from 'typeorm';
 import { ActivityInfoEntity } from '../entity/info';
 import { ActivityParticipationEntity } from '../entity/participation';
 import { ActivityTemplateEntity } from '../entity/template';
+import { ActivityCheckinLogEntity } from '../entity/checkinLog';
 import { TeamInfoEntity } from '../../team/entity/info';
 import { TeamMemberEntity } from '../../team/entity/member';
 import { Inject } from '@midwayjs/core';
 import { MessageInfoService } from '../../message/service/info';
+import { Utils } from '../../../comm/utils';
+import { GeoService } from '../../base/service/geo';
+import { UserInfoEntity } from '../../user/entity/info';
+import * as moment from 'moment';
 
 /**
  * 活动服务
@@ -22,11 +27,17 @@ export class ActivityInfoService extends BaseService {
   @InjectEntityModel(ActivityParticipationEntity)
   activityParticipationEntity: Repository<ActivityParticipationEntity>;
 
+  @InjectEntityModel(ActivityCheckinLogEntity)
+  activityCheckinLogEntity: Repository<ActivityCheckinLogEntity>;
+
   @InjectEntityModel(ActivityTemplateEntity)
   activityTemplateEntity: Repository<ActivityTemplateEntity>;
 
   @InjectEntityModel(TeamMemberEntity)
   teamMemberEntity: Repository<TeamMemberEntity>;
+
+  @InjectEntityModel(UserInfoEntity)
+  userInfoEntity: Repository<UserInfoEntity>;
 
   @InjectEntityModel(TeamInfoEntity)
   teamInfoEntity: Repository<TeamInfoEntity>;
@@ -42,6 +53,24 @@ export class ActivityInfoService extends BaseService {
 
   @Inject()
   messageInfoService: MessageInfoService;
+
+  @Inject()
+  utils: Utils;
+
+  @Inject()
+  geoService: GeoService;
+
+  private normalizeTeamId(value: any): number | null {
+    if (value == null) return null;
+    if (typeof value === 'string') {
+      const s = value.trim().toLowerCase();
+      if (!s || s === 'null' || s === 'undefined') return null;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
 
   /**
    * 活动详情（含模板名、团队名，用于编辑回显）
@@ -156,15 +185,12 @@ export class ActivityInfoService extends BaseService {
       throw new CoolCommException('活动已结束，无法分配团队~');
     }
     // teamId 为 null 代表全局活动
-    let targetTeamId: number = null;
-    if (teamId) {
-      const memberRepo = this.teamMemberEntity;
-      // 只校验团队是否存在成员记录即可，避免额外依赖
-      const anyMember = await memberRepo.findOneBy({ teamId });
-      if (!anyMember) {
-        throw new CoolCommException('团队不存在或暂无成员~');
+    const targetTeamId = this.normalizeTeamId(teamId);
+    if (targetTeamId) {
+      const team = await this.teamInfoEntity.findOneBy({ id: targetTeamId });
+      if (!team) {
+        throw new CoolCommException('团队不存在~');
       }
-      targetTeamId = teamId;
     }
     await this.activityInfoEntity.update(activityId, { teamId: targetTeamId });
     if (targetTeamId) {
@@ -203,11 +229,13 @@ export class ActivityInfoService extends BaseService {
       delete data.teamId;
     } else {
       if (data.teamId !== undefined) {
-        if (data.teamId) {
-          const anyMember = await this.teamMemberEntity.findOneBy({ teamId: data.teamId });
-          if (!anyMember) {
-            throw new CoolCommException('团队不存在或暂无成员~');
+        const nextTeamId = this.normalizeTeamId(data.teamId);
+        if (nextTeamId) {
+          const team = await this.teamInfoEntity.findOneBy({ id: nextTeamId });
+          if (!team) {
+            throw new CoolCommException('团队不存在~');
           }
+          data.teamId = nextTeamId as any;
         } else {
           data.teamId = null;
         }
@@ -243,7 +271,7 @@ export class ActivityInfoService extends BaseService {
       .addSelect('u.nickName', 'userName')
       .getRawMany();
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = moment().format('YYYY-MM-DD');
     let todayCheckinCount = 0;
     const checkinList: { userId: number; userName: string; checkinDays: number; todayChecked: boolean }[] = [];
 
@@ -292,17 +320,17 @@ export class ActivityInfoService extends BaseService {
           : 'a.teamId IS NULL',
         teamIds.length > 0 ? { teamIds } : {}
       )
-      .select([
-        'a.id',
-        'a.title',
-        'a.startDate',
-        'a.endDate',
-        'a.content',
-        'a.isTop',
-        'a.templateId',
-        'a.teamId',
-        'a.checkinMode',
-      ])
+      .select('a.id', 'id')
+      .addSelect('a.title', 'title')
+      .addSelect('a.startDate', 'startDate')
+      .addSelect('a.endDate', 'endDate')
+      .addSelect('a.content', 'content')
+      .addSelect('a.isTop', 'isTop')
+      .addSelect('a.templateId', 'templateId')
+      .addSelect('a.teamId', 'teamId')
+      .addSelect('a.checkinMode', 'checkinMode')
+      .addSelect('a.targetMeditationSeconds', 'targetMeditationSeconds')
+      .addSelect('a.passPercent', 'passPercent')
       .addSelect('b.name', 'templateName')
       .addSelect('b.icon', 'templateIcon')
       .orderBy('a.isTop', 'DESC')
@@ -397,7 +425,12 @@ export class ActivityInfoService extends BaseService {
   /**
    * 活动打卡
    */
-  async checkinActivity(userId: number, activityId: number) {
+  async checkinActivity(
+    userId: number,
+    activityId: number,
+    payload?: any,
+    source: number = 1
+  ) {
     const activity = await this.activityInfoEntity.findOneBy({ id: activityId });
     if (!activity) {
       throw new CoolCommException('活动不存在~');
@@ -430,37 +463,107 @@ export class ActivityInfoService extends BaseService {
       throw new CoolCommException('请先报名活动再打卡~');
     }
 
+    const ipRaw = this.ctx ? await this.utils.getReqIP(this.ctx) : '';
+    const ip = String(ipRaw ?? '').split(',')[0].trim();
+    const uaRaw = this.ctx?.get?.('user-agent');
+    const ua = String(uaRaw ?? '');
+
     const checkinMode = Number(activity.checkinMode) || 1;
-    if (checkinMode === 2) {
-      const existsChecked =
-        Array.isArray(participation.checkins) &&
-        participation.checkins.some((d: any) => d?.checked);
-      if (existsChecked) {
-        throw new CoolCommException('该活动仅需打卡一次，已完成打卡~');
+    const lat = payload?.lat != null ? Number(payload.lat) : null;
+    const lng = payload?.lng != null ? Number(payload.lng) : null;
+    const accuracy = payload?.accuracy != null ? Number(payload.accuracy) : null;
+    let province = payload?.province ?? null;
+    let city = payload?.city ?? null;
+
+    let distanceM: number = null;
+    try {
+      if ((province == null || city == null) && lat != null && lng != null) {
+        try {
+          const geo = await this.geoService.reverseGeocode(lat, lng);
+          if (geo?.province && province == null) province = geo.province;
+          if (geo?.city && city == null) city = geo.city;
+        } catch {}
       }
-    }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const checkins = Array.isArray(participation.checkins)
-      ? [...participation.checkins]
-      : [];
-    const idx = checkins.findIndex((d: any) => d?.date === today);
-    if (idx >= 0) {
-      checkins[idx] = { ...checkins[idx], checked: true, time: new Date() };
-    } else {
-      checkins.push({ date: today, checked: true, time: new Date() });
-    }
+      if (checkinMode === 2) {
+        const existsChecked =
+          Array.isArray(participation.checkins) &&
+          participation.checkins.some((d: any) => d?.checked);
+        if (existsChecked) {
+          if (Number(source) === 2) return;
+          throw new CoolCommException('该活动仅需打卡一次，已完成打卡~');
+        }
+      }
 
-    await this.activityParticipationEntity.update(participation.id, {
-      checkins,
-    });
+      const today = moment().format('YYYY-MM-DD');
+      const checkins = Array.isArray(participation.checkins) ? [...participation.checkins] : [];
+      const idx = checkins.findIndex((d: any) => d?.date === today);
+      if (idx >= 0 && checkins[idx]?.checked) {
+        if (Number(source) === 2) return;
+        checkins[idx] = { ...checkins[idx], checked: true, time: new Date(), source };
+        await this.activityParticipationEntity.update(participation.id, { checkins });
+        return;
+      }
+      if (idx >= 0) {
+        checkins[idx] = { ...checkins[idx], checked: true, time: new Date(), source };
+      } else {
+        checkins.push({ date: today, checked: true, time: new Date(), source });
+      }
+
+      const checkinTime = new Date();
+      await this.activityParticipationEntity.manager.transaction(async manager => {
+        await manager.update(ActivityParticipationEntity, participation.id, { checkins });
+        await manager.save(ActivityCheckinLogEntity, {
+          userId,
+          activityId,
+          checkinTime,
+          lat: lat != null ? String(lat) : null,
+          lng: lng != null ? String(lng) : null,
+          accuracy,
+          distanceM,
+          result: 1,
+          source: Number(source) === 2 ? 2 : 1,
+          reason: null,
+          ip,
+          ua,
+          province,
+          city,
+        });
+      });
+      if (province || city) {
+        const update: any = { lastLocationTime: new Date() };
+        if (province) update.lastProvince = province;
+        if (city) update.lastCity = city;
+        await this.userInfoEntity.update(userId, update);
+      }
+      return;
+    } catch (e: any) {
+      const reason = e?.message ? String(e.message) : 'checkin_failed';
+      await this.activityCheckinLogEntity.save({
+        userId,
+        activityId,
+        checkinTime: new Date(),
+        lat: lat != null ? String(lat) : null,
+        lng: lng != null ? String(lng) : null,
+        accuracy,
+        distanceM,
+        result: 0,
+        source: Number(source) === 2 ? 2 : 1,
+        reason,
+        ip,
+        ua,
+        province,
+        city,
+      });
+      throw e;
+    }
   }
 
   /**
    * 每日打卡检查（仅针对发布中且未结束的团队专属活动，未打卡成员推送提醒）
    */
   async checkDailyCheckin() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = moment().format('YYYY-MM-DD');
     const now = new Date();
     // 仅统计：status=2、未结束、团队专属活动 的参与记录（未打卡用户仅限指定团队成员）
     const rows = await this.activityParticipationEntity

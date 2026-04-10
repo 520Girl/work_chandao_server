@@ -26,6 +26,12 @@ export class ActivityInfoEntity extends BaseEntity {
   @Column({ comment: '详细内容', type: 'text', nullable: true })
   content: string;
 
+  @Column({ comment: '禅修目标时长(秒)', default: 0 })
+  targetMeditationSeconds: number;
+
+  @Column({ comment: '达标百分比(0-100)', default: 100 })
+  passPercent: number;
+
   @Column({ comment: '是否置顶', dict: ['否', '是'], default: 0 })
   isTop: number;
 

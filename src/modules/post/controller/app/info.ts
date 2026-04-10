@@ -3,6 +3,8 @@ import { BaseController, CoolController } from '@cool-midway/core';
 import { PostInfoService } from '../../service/info';
 import { PostShareDTO, PostManualDTO, PostUpdateDTO, PostLikeDTO } from '../../dto/info';
 import { Validate } from '@midwayjs/validate';
+import { PostFeedQueryDTO } from '../../dto/feed';
+import { PostDeleteDTO } from '../../dto/action';
 
 /**
  * 社区动态
@@ -27,7 +29,10 @@ export class AppPostInfoController extends BaseController {
         body.reportId,
         body.targetTeamId,
         body.content,
-        body.userState
+        body.userState,
+        body.lat,
+        body.lng,
+        body.accuracy
       )
     );
   }
@@ -35,9 +40,19 @@ export class AppPostInfoController extends BaseController {
   @Post('/manual', { summary: '手动发布动态' })
   @Validate()
   async manual(@Body() body: PostManualDTO) {
-    const { content, images, teamId, userState } = body;
+    const { content, images, teamId, userState, status, lat, lng, accuracy } = body;
     return this.ok(
-      await this.postInfoService.manual(this.ctx.user.id, content, images ?? [], teamId, userState)
+      await this.postInfoService.manual(
+        this.ctx.user.id,
+        content,
+        images ?? [],
+        teamId,
+        userState,
+        lat,
+        lng,
+        accuracy,
+        status
+      )
     );
   }
 
@@ -56,8 +71,10 @@ export class AppPostInfoController extends BaseController {
   }
 
   @Get('/feed', { summary: '动态流' })
-  async feed(@Query('page') page: number = 1, @Query('size') size: number = 20) {
-    return this.ok(await this.postInfoService.feed(this.ctx.user.id, page, size));
+  async feed(@Query() query: PostFeedQueryDTO) {
+    return this.ok(
+      await this.postInfoService.feed(this.ctx.user.id, query?.page, query?.size, query?.publishStatus)
+    );
   }
 
   @Get('/feed/teams', { summary: '团队动态流' })
@@ -74,6 +91,13 @@ export class AppPostInfoController extends BaseController {
   @Validate()
   async like(@Body() body: PostLikeDTO) {
     await this.postInfoService.like(this.ctx.user.id, body.id);
+    return this.ok();
+  }
+
+  @Post('/delete', { summary: '删除动态（自己）' })
+  @Validate()
+  async deletePost(@Body() body: PostDeleteDTO) {
+    await this.postInfoService.deleteMine(this.ctx.user.id, Number(body.id));
     return this.ok();
   }
 }

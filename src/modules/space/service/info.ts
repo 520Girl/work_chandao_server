@@ -32,6 +32,8 @@ export class SpaceInfoService extends BaseService {
     share: '分享图片',
     activity: '活动封面',
     product: '商品图片',
+    music_audio: '音乐音频',
+    music_cover: '音乐封面',
     default: '默认分类',
   };
 
@@ -51,7 +53,10 @@ export class SpaceInfoService extends BaseService {
       '.ico',
       '.avif',
     ];
-    return imageExts.includes(ext) ? 'image' : 'file';
+    const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.opus'];
+    if (imageExts.includes(ext)) return 'image';
+    if (audioExts.includes(ext)) return 'audio';
+    return 'file';
   }
 
   /**

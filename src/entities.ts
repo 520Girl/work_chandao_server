@@ -44,6 +44,7 @@ import * as entity41 from './modules/base/entity/sys/conf';
 import * as entity42 from './modules/activity/entity/template';
 import * as entity43 from './modules/activity/entity/participation';
 import * as entity44 from './modules/activity/entity/info';
+import * as entity45 from './modules/activity/entity/checkinLog';
 export const entities = [
   ...Object.values(entity0),
   ...Object.values(entity1),
@@ -90,4 +91,5 @@ export const entities = [
   ...Object.values(entity42),
   ...Object.values(entity43),
   ...Object.values(entity44),
+  ...Object.values(entity45),
 ];

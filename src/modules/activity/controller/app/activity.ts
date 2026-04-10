@@ -1,7 +1,7 @@
 import { Inject, Post, Body, Get } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { ActivityInfoService } from '../../service/info';
-import { ActivityJoinDTO } from '../../dto/activity';
+import { ActivityCheckinDTO, ActivityJoinDTO } from '../../dto/activity';
 import { Validate } from '@midwayjs/validate';
 
 /**
@@ -46,8 +46,8 @@ export class AppActivityController extends BaseController {
 
   @Post('/checkin', { summary: '活动打卡' })
   @Validate()
-  async checkin(@Body() body: ActivityJoinDTO) {
-    await this.activityInfoService.checkinActivity(this.ctx.user.id, body.id);
+  async checkin(@Body() body: ActivityCheckinDTO) {
+    await this.activityInfoService.checkinActivity(this.ctx.user.id, body.id, body, 1);
     return this.ok();
   }
 }

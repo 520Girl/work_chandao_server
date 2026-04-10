@@ -13,6 +13,7 @@ import { join } from 'path';
 import { pUploadPath } from '../../../comm/path';
 import { PluginService } from '../../plugin/service/info';
 import { ActivityInfoEntity } from '../../activity/entity/info';
+import { GeoService } from '../../base/service/geo';
 
 /**
  * 社区动态服务
@@ -48,6 +49,9 @@ export class PostInfoService extends BaseService {
 
   @Inject()
   pluginService: PluginService;
+
+  @Inject()
+  geoService: GeoService;
 
   /**
    * 获取用户首团队ID（firstTeamId 或任意加入的团队）
@@ -176,7 +180,10 @@ export class PostInfoService extends BaseService {
     reportId: number,
     targetTeamId?: number | null,
     content?: string,
-    userState?: number
+    userState?: number,
+    lat?: number,
+    lng?: number,
+    accuracy?: number
   ) {
     const userTeamId = await this.getUserTeamId(userId);
     if (!userTeamId) {
@@ -205,6 +212,21 @@ export class PostInfoService extends BaseService {
       }
     }
     const imageUrl = await this.generateReportImage(report, finalContent);
+    let province: string = null;
+    let city: string = null;
+    if (lat != null && lng != null) {
+      try {
+        const geo = await this.geoService.reverseGeocode(Number(lat), Number(lng));
+        province = geo?.province ?? null;
+        city = geo?.city ?? null;
+      } catch {}
+    }
+    if (province || city) {
+      const update: any = { lastLocationTime: new Date() };
+      if (province) update.lastProvince = province;
+      if (city) update.lastCity = city;
+      await this.userInfoEntity.update(userId, update);
+    }
     return this.postInfoEntity.save({
       type: 1,
       userId,
@@ -212,6 +234,8 @@ export class PostInfoService extends BaseService {
       content: finalContent,
       images: imageUrl ? [imageUrl] : [],
       userState: Number(userState) > 0 ? Number(userState) : 1,
+      province,
+      city,
       status,
     });
   }
@@ -225,7 +249,11 @@ export class PostInfoService extends BaseService {
     content: string,
     images: string[],
     teamId?: number | null,
-    userState?: number
+    userState?: number,
+    lat?: number,
+    lng?: number,
+    accuracy?: number,
+    status?: number
   ) {
     const userTeamId = await this.getUserTeamId(userId);
     if (!userTeamId) {
@@ -242,8 +270,23 @@ export class PostInfoService extends BaseService {
     }
 
     // 未传入 teamId 时默认需要管理员审核
-    const status = teamId != null ? 2 : 1;
+    const finalStatus = teamId != null ? (Number(status) === 1 ? 1 : 2) : 1;
 
+    let province: string = null;
+    let city: string = null;
+    if (lat != null && lng != null) {
+      try {
+        const geo = await this.geoService.reverseGeocode(Number(lat), Number(lng));
+        province = geo?.province ?? null;
+        city = geo?.city ?? null;
+      } catch {}
+    }
+    if (province || city) {
+      const update: any = { lastLocationTime: new Date() };
+      if (province) update.lastProvince = province;
+      if (city) update.lastCity = city;
+      await this.userInfoEntity.update(userId, update);
+    }
     return this.postInfoEntity.save({
       type: 2,
       userId,
@@ -251,7 +294,9 @@ export class PostInfoService extends BaseService {
       content,
       images: images || [],
       userState: Number(userState) > 0 ? Number(userState) : 1,
-      status,
+      province,
+      city,
+      status: finalStatus,
     });
   }
 
@@ -295,6 +340,21 @@ export class PostInfoService extends BaseService {
     }
     await this.postLikeEntity.insert({ userId, postId });
     this.coolEventManager.emit('postLiked', post.userId);
+  }
+
+  /**
+   * App 删除自己的动态（同时清理点赞）
+   */
+  async deleteMine(userId: number, postId: number) {
+    await this.postInfoEntity.manager.transaction(async manager => {
+      const post = await manager.findOneBy(PostInfoEntity, { id: postId });
+      if (!post) throw new CoolCommException('动态不存在');
+      if (Number(post.userId) !== Number(userId)) {
+        throw new CoolCommException('无权限删除');
+      }
+      await manager.delete(PostLikeEntity, { postId } as any);
+      await manager.delete(PostInfoEntity, { id: postId } as any);
+    });
   }
 
   /**
@@ -354,14 +414,26 @@ export class PostInfoService extends BaseService {
   }
 
   /**
-   * App 动态流：当前用户自己的动态（仅 status=2），按时间倒序
+   * App 动态流：当前用户自己的动态，按时间倒序
    */
-  async feed(userId: number, page: number = 1, size: number = 20) {
+  async feed(
+    userId: number,
+    page: number = 1,
+    size: number = 20,
+    publishStatus: number = 2
+  ) {
     const qb = this.postInfoEntity
       .createQueryBuilder('a')
-      .where('a.status = 2')
       .andWhere('a.userId = :userId', { userId })
       .orderBy('a.createTime', 'DESC');
+    const ps = Number(publishStatus);
+    if (ps === 1) {
+      qb.andWhere('a.status = 1');
+    } else if (ps === 2) {
+      qb.andWhere('a.status = 2');
+    } else {
+      qb.andWhere('a.status IN (1, 2)');
+    }
     const total = await qb.getCount();
     const list = await qb
       .skip((page - 1) * size)
@@ -444,6 +516,8 @@ export class PostInfoService extends BaseService {
           p.userState AS userState,
           p.content AS content,
           p.images AS images,
+          p.province AS province,
+          p.city AS city,
           IFNULL(pl.likeCount, 0) AS likeCount,
           IF(
             EXISTS(
@@ -485,6 +559,8 @@ export class PostInfoService extends BaseService {
           NULL AS userState,
           a.content AS content,
           NULL AS images,
+          NULL AS province,
+          NULL AS city,
           NULL AS likeCount,
           NULL AS isLiked,
           IFNULL(pa.participantCount, 0) AS participantCount,

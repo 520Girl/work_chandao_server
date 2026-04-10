@@ -2,7 +2,7 @@ import { ALL, Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { Validate } from '@midwayjs/validate';
 import { MessageInfoService } from '../../service/info';
-import { MessageActionDTO, MessageDeleteDTO, MessagePageDTO, MessageReadDTO } from '../../dto/app';
+import { MessageActionDTO, MessageDeleteDTO, MessageInfoDTO, MessagePageDTO, MessageReadDTO } from '../../dto/app';
 import { ActivityInfoService } from '../../../activity/service/info';
 
 @CoolController({
@@ -45,6 +45,17 @@ export class AppMessageInfoController extends BaseController {
   @Get('/unread-count', { summary: '未读数量' })
   async unreadCount() {
     return this.ok(await this.messageInfoService.unreadCount(this.ctx.user.id));
+  }
+
+  @Get('/info', { summary: '消息详情' })
+  @Validate()
+  async messageInfo(@Query() query: MessageInfoDTO) {
+    const msg = await this.messageInfoService.infoForUser(
+      this.ctx.user.id,
+      Number(query.messageId)
+    );
+    if (!msg) return this.ok(null);
+    return this.ok(msg);
   }
 
   @Post('/read', { summary: '标记已读' })
