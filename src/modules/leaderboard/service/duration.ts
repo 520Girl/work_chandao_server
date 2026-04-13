@@ -1,0 +1,99 @@
+import { Provide } from '@midwayjs/core';
+import { BaseService } from '@cool-midway/core';
+import { Repository } from 'typeorm';
+import { InjectEntityModel } from '@midwayjs/typeorm';
+import { UserInfoEntity } from '../../user/entity/info';
+
+@Provide()
+export class LeaderboardDurationService extends BaseService {
+  @InjectEntityModel(UserInfoEntity)
+  userInfoEntity: Repository<UserInfoEntity>;
+
+  private fmt(d: Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  private rangeStart(range: string) {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    if (range === 'day') return now;
+    if (range === 'month') return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    if (range === 'week') {
+      const day = now.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const start = new Date(now);
+      start.setDate(now.getDate() + diff);
+      return start;
+    }
+    return new Date(1970, 0, 1, 0, 0, 0);
+  }
+
+  async page(params: any) {
+    const page = Math.max(Number(params?.page ?? 1), 1);
+    const size = Math.min(Math.max(Number(params?.size ?? 20), 1), 100);
+    const range = String(params?.range ?? 'week');
+    const teamId = params?.teamId != null ? Number(params.teamId) : null;
+
+    const start = this.rangeStart(range);
+    const end = new Date();
+    const startStr = this.fmt(start);
+    const endStr = this.fmt(end);
+    const offset = (page - 1) * size;
+
+    const teamJoin = teamId
+      ? 'INNER JOIN team_member tm ON tm.userId = u.id AND tm.teamId = ? AND tm.exitType = 0'
+      : '';
+    const teamArgs = teamId ? [teamId] : [];
+
+    const sqlBase = `
+      FROM user_info u
+      ${teamJoin}
+      LEFT JOIN (
+        SELECT
+          ms.userId AS userId,
+          COUNT(1) AS reportCount,
+          FLOOR(SUM(mr.totalDuration) / 60) AS minutes,
+          ROUND(SUM(mr.totalDuration) / 3600, 2) AS hours,
+          SUM(mr.totalDuration) AS seconds,
+          MAX(ms.endDate) AS lastMeditationTime
+        FROM meditation_report mr
+        INNER JOIN meditation_session ms ON ms.id = mr.sessionId
+        WHERE ms.status = 2 AND ms.endDate IS NOT NULL AND ms.endDate >= ? AND ms.endDate <= ?
+        GROUP BY ms.userId
+      ) r ON r.userId = u.id
+      WHERE u.status = 1 AND IFNULL(r.seconds, 0) > 0
+    `;
+
+    const countSql = `SELECT COUNT(1) AS total FROM (SELECT u.id ${sqlBase}) t`;
+    const countArgs = [...teamArgs, startStr, endStr];
+    const totalRow: any[] = await this.userInfoEntity.manager.query(countSql, countArgs);
+    const total = Number(totalRow?.[0]?.total ?? 0);
+
+    const listSql = `
+      SELECT
+        u.id AS userId,
+        u.nickName AS nickName,
+        u.avatarUrl AS avatarUrl,
+        u.lastProvince AS lastProvince,
+        u.lastCity AS lastCity,
+        IFNULL(r.reportCount, 0) AS reportCount,
+        IFNULL(r.minutes, 0) AS minutes,
+        IFNULL(r.hours, 0) AS hours,
+        IFNULL(r.seconds, 0) AS seconds,
+        r.lastMeditationTime AS lastMeditationTime
+      ${sqlBase}
+      ORDER BY r.seconds DESC, r.lastMeditationTime DESC, u.id DESC
+      LIMIT ? OFFSET ?
+    `;
+    const listArgs = [...teamArgs, startStr, endStr, size, offset];
+    const list = await this.userInfoEntity.manager.query(listSql, listArgs);
+
+    return {
+      list,
+      pagination: { page, size, total },
+      range: { range, start: startStr, end: endStr },
+    };
+  }
+}
+

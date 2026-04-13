@@ -34,4 +34,7 @@ export class MeditationSessionEntity extends BaseEntity {
 
   @Column({ comment: '最后活动时间', nullable: true })
   lastActiveTime: Date;
+
+  @Column({ comment: '结束原因', nullable: true, type: 'int' })
+  endReason: number;
 }

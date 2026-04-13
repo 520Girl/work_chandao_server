@@ -12,6 +12,7 @@ export class MeditationAutoEndJob {
   @Inject()
   meditationSessionService: MeditationSessionService;
 
+
   async onTick() {
     await this.meditationSessionService.autoEndExpiredDeviceSessions();
   }

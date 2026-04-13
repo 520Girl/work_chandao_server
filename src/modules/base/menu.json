@@ -1326,6 +1326,31 @@
                 ]
             },
             {
+                "name": "总时长排行榜",
+                "router": "/leaderboard/duration",
+                "perms": null,
+                "type": 1,
+                "icon": "icon-rank",
+                "orderNum": 2,
+                "viewPath": "modules/leaderboard/views/duration.vue",
+                "keepAlive": true,
+                "isShow": true,
+                "childMenus": [
+                    {
+                        "name": "查询",
+                        "router": null,
+                        "perms": "leaderboard:duration:page",
+                        "type": 2,
+                        "icon": null,
+                        "orderNum": 1,
+                        "viewPath": null,
+                        "keepAlive": false,
+                        "isShow": true,
+                        "childMenus": []
+                    }
+                ]
+            },
+            {
                 "name": "社群管理",
                 "router": null,
                 "perms": null,

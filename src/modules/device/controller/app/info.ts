@@ -43,14 +43,32 @@ export class AppDeviceInfoController extends BaseController {
   @Get('/info', { summary: '设备信息' })
   @Validate()
   async deviceInfo(@Query() query: DeviceMacDTO) {
-    const device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
-    const info = await this.deviceInfoService.getDeviceInfo(device.mac);
+    let device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
+    const info = await this.deviceInfoService.refreshDeviceStatusFromCloud(device.mac);
+    device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
     let data = info?.data ?? info;
-    if(data) {
-      data.status = {...data.status,model: data.model}
-      data = {...data, ...device, interface: data.status} ;
+    if (data) {
+      data.status = { ...data.status, model: data.model };
+      data = { ...data, ...device, interface: data.status };
     }
     return this.ok(data);
+  }
+
+  @Get('/status', { summary: '设备状态' })
+  @Validate()
+  async deviceStatus(@Query() query: DeviceMacDTO) {
+    let device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
+    const info = await this.deviceInfoService.refreshDeviceStatusFromCloud(device.mac);
+    device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, query.mac);
+    const data = info?.data ?? info ?? {};
+    return this.ok({
+      sn: device.sn,
+      mac: device.mac,
+      model: device.model,
+      status: device.status,
+      statusUpdateTime: device.statusUpdateTime,
+      interface: data?.status ? { ...data.status, model: data.model } : null,
+    });
   }
 
   @Post('/realtime', { summary: '设备实时数据' })

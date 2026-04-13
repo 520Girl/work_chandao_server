@@ -22,6 +22,6 @@ export class BaseSysParamEntity extends BaseEntity {
   })
   dataType: number;
 
-  @Column({ comment: '备注', nullable: true })
+  @Column({ comment: '备注', nullable: true, length: 1500 })
   remark: string;
 }

@@ -11,6 +11,8 @@ import { Inject } from '@midwayjs/core';
 
 import { DeviceInfoService } from '../../device/service/info';
 import { BaseSysParamService } from '../../base/service/sys/param';
+import * as zlib from 'zlib';
+import { DictInfoService } from '../../dict/service/info';
 
 /**
  * 冥想会话服务
@@ -37,6 +39,9 @@ export class MeditationSessionService extends BaseService {
 
   @Inject()
   baseSysParamService: BaseSysParamService;
+
+  @Inject()
+  dictInfoService: DictInfoService;
 
   /**
    * 开始冥想
@@ -103,17 +108,32 @@ export class MeditationSessionService extends BaseService {
       : await this.meditationSessionEntity.findOneBy({ userId, status: 1 });
 
     if (!session || session.status !== 1) {
-      return { status: 'ended', reason: 'finished' };
+      return { status: 'ended', reason: 'finished', endReason: session?.endReason ?? null };
     }
 
     const timeout =
       (await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_TIMEOUT_MIN')) || 5;
     const now = Date.now();
+    if (session.type === 2) {
+      session.lastActiveTime = new Date();
+      await this.meditationSessionEntity.save(session);
+    }
     const lastActive = session.lastActiveTime ? session.lastActiveTime.getTime() : session.startDate.getTime();
     
     if (now - lastActive > timeout * 60 * 1000) {
-      await this.end(userId, session.id);
-      return { status: 'ended', reason: 'timeout' };
+      const endDateOverride = session.lastActiveTime ?? session.startDate;
+      const effectiveMs = endDateOverride.getTime() - session.startDate.getTime();
+      const endReason = effectiveMs < timeout * 60 * 1000 ? 4 : 2;
+      await this.end(userId, session.id, endReason, endDateOverride);
+      return { status: 'ended', reason: 'timeout', endReason };
+    }
+
+    if (session.targetDuration && session.targetDuration > 0) {
+      const elapsedSec = Math.floor((now - session.startDate.getTime()) / 1000);
+      if (elapsedSec >= session.targetDuration * 60) {
+        await this.end(userId, session.id, 3);
+        return { status: 'ended', reason: 'target', endReason: 3 };
+      }
     }
 
     let resp = null;
@@ -152,19 +172,26 @@ export class MeditationSessionService extends BaseService {
       }
     }
 
+    const elapsed = Math.floor((now - session.startDate.getTime()) / 1000);
+
     return { 
       status: 'ongoing', 
       resp,
       saved,
       deviceStatusId,
-      elapsed: Math.floor((now - session.startDate.getTime()) / 1000)
+      elapsed
     };
   }
 
   /**
    * 结束冥想
    */
-  async end(userId: number, sessionId?: number) {
+  async end(
+    userId: number,
+    sessionId?: number,
+    endReason = 1,
+    endDateOverride?: Date
+  ) {
     const session = sessionId
       ? await this.meditationSessionEntity.findOneBy({ id: sessionId, userId })
       : await this.meditationSessionEntity.findOneBy({ userId, status: 1 });
@@ -177,24 +204,49 @@ export class MeditationSessionService extends BaseService {
       throw new CoolCommException('冥想会话已结束');
     }
 
-    const endDate = new Date();
+    let endDate = endDateOverride ? new Date(endDateOverride) : new Date();
+    if (session.startDate && endDate.getTime() < session.startDate.getTime()) {
+      endDate = new Date(session.startDate);
+    }
     await this.meditationSessionEntity.update(session.id, {
       endDate,
       status: 2,
+      endReason,
     });
+    (session as any).endDate = endDate;
+    (session as any).status = 2;
+    (session as any).endReason = endReason;
 
     const totalDuration = Math.max(
       0,
       Math.floor((endDate.getTime() - session.startDate.getTime()) / 1000)
     );
 
-    // 仅针对有设备的会话计算数据评分
     let focusScore = 0;
+    let metrics = {
+      avgHeartRate: 0,
+      avgBreathRate: 0,
+      movementCount: 0,
+      hrvScore: 0,
+      hrvSource: 'none',
+      avgTemperature: 0,
+      avgHumidity: 0,
+      peaceRatio: 0,
+      relaxRatio: 0,
+      tensionRatio: 0,
+      anxietyRatio: 0,
+      attachmentRatio: 50,
+      sections: null,
+      sitCount: 0,
+    };
+
     if (session.type === 1) {
       const data = await this.meditationDataEntity.findBy({
         sessionId: session.id,
       });
-      focusScore = this.calcFocusScore(data);
+      const calcResult = this.calcMetrics(data, session.startDate.getTime(), endDate.getTime());
+      focusScore = calcResult.focusScore;
+      metrics = calcResult.metrics;
     }
     
     const achievements = await this.calcAchievements(userId, endDate);
@@ -204,7 +256,12 @@ export class MeditationSessionService extends BaseService {
       totalDuration,
       focusScore,
       achievements,
+      ...metrics,
     });
+
+    const totals = await this.calcUserTotals(userId, endDate);
+    await this.meditationReportEntity.update(report.id, totals as any);
+    Object.assign(report as any, totals);
 
     // 触发冥想结束事件
     this.coolEventManager.emit('meditationEnded', session);
@@ -212,17 +269,333 @@ export class MeditationSessionService extends BaseService {
     return report;
   }
 
+  async endStatus(userId: number, sessionId: number) {
+    const report: any = await this.end(userId, sessionId, 1);
+    const session = await this.meditationSessionEntity.findOneBy({ id: sessionId, userId });
+    return {
+      sessionId,
+      reportId: report?.id ?? null,
+      status: 'ended',
+      endReason: session?.endReason ?? 1,
+      endDate: session?.endDate ?? null,
+    };
+  }
+
+  private async calcUserTotals(userId: number, endDate: Date) {
+    const reports: any[] = await this.meditationReportEntity
+      .createQueryBuilder('r')
+      .leftJoin(MeditationSessionEntity, 's', 'r.sessionId = s.id')
+      .where('s.userId = :userId', { userId })
+      .select(['r.totalDuration as totalDuration'])
+      .getRawMany();
+    const totalSecondsRaw =
+      (reports ?? []).reduce((sum, item) => sum + (Number(item?.totalDuration ?? 0) || 0), 0) || 0;
+    const totalHours = Number((totalSecondsRaw / 3600).toFixed(2));
+
+    const sessions = await this.meditationSessionEntity.find({
+      where: { userId, status: 2 },
+      select: ['startDate'],
+      order: { startDate: 'DESC' } as any,
+    });
+
+    const days = new Set<string>();
+    for (const s of sessions) {
+      if (!s?.startDate) continue;
+      days.add(s.startDate.toISOString().slice(0, 10));
+    }
+    const totalDays = days.size;
+
+    const endDay = endDate.toISOString().slice(0, 10);
+    let consecutiveDays = 0;
+    let cur = new Date(endDay);
+    while (true) {
+      const d = cur.toISOString().slice(0, 10);
+      if (!days.has(d)) break;
+      consecutiveDays++;
+      cur.setDate(cur.getDate() - 1);
+      if (consecutiveDays > 3650) break;
+    }
+
+    return { totalDays, totalHours, consecutiveDays };
+  }
+
   /**
    * 报告历史
    */
   async reportHistory(userId: number) {
-    return this.meditationReportEntity
+    const rules = await this.getMeditationReportLevelRules();
+    const rows: any[] = await this.meditationReportEntity
       .createQueryBuilder('a')
       .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
       .where('b.userId = :userId', { userId })
       .orderBy('a.id', 'DESC')
-      .select(['a.*', 'b.sn', 'b.startDate', 'b.endDate', 'b.targetDuration'])
+      .select([
+        'a.*',
+        'b.sn',
+        'b.type as sessionType',
+        'b.startDate',
+        'b.endDate',
+        'b.targetDuration',
+        'b.endReason',
+      ])
       .getRawMany();
+
+    return rows.map(row => this.normalizeReportHistoryRow(row, rules, false));
+  }
+
+  async reportHistoryPage(userId: number, page = 1, size = 20) {
+    const rules = await this.getMeditationReportLevelRules();
+    const p = Math.max(1, Number(page) || 1);
+    const s = Math.max(1, Math.min(100, Number(size) || 20));
+
+    const total = await this.meditationReportEntity
+      .createQueryBuilder('a')
+      .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
+      .where('b.userId = :userId', { userId })
+      .getCount();
+
+    const rows: any[] = await this.meditationReportEntity
+      .createQueryBuilder('a')
+      .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
+      .where('b.userId = :userId', { userId })
+      .orderBy('a.id', 'DESC')
+      .offset((p - 1) * s)
+      .limit(s)
+      .select([
+        'a.*',
+        'b.sn',
+        'b.type as sessionType',
+        'b.startDate',
+        'b.endDate',
+        'b.targetDuration',
+        'b.endReason',
+      ])
+      .getRawMany();
+
+    return {
+      list: rows.map(row => this.normalizeReportHistoryRow(row, rules, false)),
+      pagination: { page: p, size: s, total },
+    };
+  }
+
+  async reportDetail(userId: number, sessionId: number) {
+    const rules = await this.getMeditationReportLevelRules();
+    const sid = Number(sessionId);
+    if (!sid) throw new CoolCommException('sessionId 不合法');
+
+    const row: any = await this.meditationReportEntity
+      .createQueryBuilder('a')
+      .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
+      .where('b.userId = :userId', { userId })
+      .andWhere('a.sessionId = :sessionId', { sessionId: sid })
+      .select([
+        'a.*',
+        'b.sn',
+        'b.type as sessionType',
+        'b.startDate',
+        'b.endDate',
+        'b.targetDuration',
+        'b.endReason',
+      ])
+      .getRawOne();
+
+    if (!row) return null;
+    return this.normalizeReportHistoryRow(row, rules, true);
+  }
+
+  private normalizeReportHistoryRow(row: any, rules?: any, includeAnalysisDetails = true) {
+    const sn = row?.b_sn ?? null;
+    const sessionType = row?.sessionType ?? row?.b_sessionType ?? null;
+    const startDate = row?.b_startDate ?? null;
+    const endDate = row?.b_endDate ?? null;
+    const targetDuration = row?.b_targetDuration ?? null;
+    const endReason = row?.b_endReason ?? null;
+
+    if (row?.b_sn !== undefined) delete row.b_sn;
+    if (row?.b_sessionType !== undefined) delete row.b_sessionType;
+    if (row?.b_startDate !== undefined) delete row.b_startDate;
+    if (row?.b_endDate !== undefined) delete row.b_endDate;
+    if (row?.b_targetDuration !== undefined) delete row.b_targetDuration;
+    if (row?.b_endReason !== undefined) delete row.b_endReason;
+
+    if (row?.aversionRatio !== undefined) delete row.aversionRatio;
+
+    if (typeof row?.achievements === 'string') {
+      try {
+        row.achievements = JSON.parse(row.achievements);
+      } catch (e) {}
+    }
+    if (!Array.isArray(row?.achievements)) row.achievements = [];
+
+    if (typeof row?.sections === 'string') {
+      try {
+        row.sections = JSON.parse(row.sections);
+      } catch (e) {}
+    }
+    if (!Array.isArray(row?.sections)) row.sections = null;
+
+    const keys = ['peaceRatio', 'relaxRatio', 'tensionRatio', 'anxietyRatio'];
+    for (const k of keys) {
+      const v = Number(row?.[k] ?? 0);
+      if (!Number.isFinite(v)) {
+        row[k] = 0;
+        continue;
+      }
+      row[k] = Math.max(0, Math.min(100, Math.round(v / 10) * 10));
+    }
+
+    const totalHours = row?.totalHours ?? row?.totalSeconds;
+    if (row?.totalSeconds !== undefined) delete row.totalSeconds;
+
+    const analysis = this.calcMeditationReportAnalysis(row, rules, includeAnalysisDetails);
+
+    return {
+      ...row,
+      sn,
+      sessionType,
+      startDate,
+      endDate,
+      targetDuration,
+      endReason,
+      totalHours,
+      ...analysis,
+    };
+  }
+
+  private calcMeditationReportAnalysis(row: any, rules?: any, includeDetails = true) {
+    const avgBreathRate = Number(row?.avgBreathRate ?? 0) || 0;
+    const avgHeartRate = Number(row?.avgHeartRate ?? 0) || 0;
+    const movementCount = Number(row?.movementCount ?? 0) || 0;
+    const totalDuration = Number(row?.totalDuration ?? 0) || 0;
+    const minutes = Math.max(1, totalDuration / 60);
+    const movementPerMinute = movementCount / minutes;
+
+    const breath = this.pickRule(rules?.breath, avgBreathRate);
+    const heart = this.pickRule(rules?.heart, avgHeartRate);
+    const stability = this.pickRule(rules?.stability, movementPerMinute);
+
+    const summaryParts = [];
+    if (stability?.short) summaryParts.push(stability.short);
+    if (breath?.short) summaryParts.push(breath.short);
+    if (heart?.short) summaryParts.push(heart.short);
+
+    const summaryText = summaryParts.length ? `本次静坐：${summaryParts.join('，')}` : null;
+    if (!includeDetails) {
+      return { summaryText };
+    }
+
+    return {
+      movementPerMinute: Number(movementPerMinute.toFixed(2)),
+      breathLevel: breath?.level ?? null,
+      breathText: breath?.text ?? null,
+      breathShort: breath?.short ?? null,
+      heartLevel: heart?.level ?? null,
+      heartText: heart?.text ?? null,
+      heartShort: heart?.short ?? null,
+      stabilityLevel: stability?.level ?? null,
+      stabilityText: stability?.text ?? null,
+      stabilityShort: stability?.short ?? null,
+      summaryText,
+    };
+  }
+
+  private pickRule(rules: any[], value: number) {
+    if (!Array.isArray(rules) || rules.length === 0) return null;
+    const v = Number(value);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    for (const r of rules) {
+      const minOk = r.min == null || v >= r.min;
+      const maxOk = r.max == null || v <= r.max;
+      if (minOk && maxOk) return r;
+    }
+    return null;
+  }
+
+  private async getMeditationReportLevelRules() {
+    const dict: any = await this.dictInfoService.data([
+      'meditation_breath_level',
+      'meditation_heart_level',
+      'meditation_stability_level',
+    ]);
+
+    return {
+      breath: this.parseLevelRules(dict?.meditation_breath_level),
+      heart: this.parseLevelRules(dict?.meditation_heart_level),
+      stability: this.parseLevelRules(dict?.meditation_stability_level),
+    };
+  }
+
+  private parseLevelRules(items: any[]) {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const rules = [];
+    for (const it of items) {
+      let cfg: any = null;
+      if (typeof it?.remark === 'string' && it.remark) {
+        try {
+          cfg = JSON.parse(it.remark);
+        } catch (e) {}
+      }
+      if (!cfg || typeof cfg !== 'object') continue;
+      const level = Number(it?.value ?? it?.id);
+      rules.push({
+        level: Number.isFinite(level) ? level : null,
+        min: cfg.min ?? null,
+        max: cfg.max ?? null,
+        short: cfg.short ?? null,
+        text: cfg.text ?? it?.name ?? null,
+      });
+    }
+    rules.sort((a, b) => (Number(a.level) || 0) - (Number(b.level) || 0));
+    return rules;
+  }
+
+  /**
+   * 获取某次会话的详细生理数据
+   */
+  async getSessionDataList(userId: number, sessionId: number) {
+    const session = await this.meditationSessionEntity.findOneBy({ id: sessionId, userId });
+    if (!session) {
+      throw new CoolCommException('冥想会话不存在或无权限');
+    }
+
+    const dataList = await this.meditationDataEntity.find({
+      where: { sessionId },
+      order: { recordTimestamp: 'ASC' },
+    });
+
+    return dataList.map(row => {
+      let decoded: any = null;
+      const blob: any = (row as any).waveBlob;
+      if (blob) {
+        try {
+          const buf = Buffer.isBuffer(blob) ? blob : Buffer.from(blob);
+          decoded = JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
+        } catch (e) {}
+      }
+
+      return {
+        id: row.id,
+        recordTimestamp: row.recordTimestamp,
+        heartRate: row.heartRate,
+        breathRate: row.breathRate,
+        rightHeartRate: row.rightHeartRate,
+        rightBreathRate: row.rightBreathRate,
+        temperature: row.temperature,
+        humidity: row.humidity,
+        inBed: row.inBed,
+        bodyMovement: row.bodyMovement,
+        wave: decoded ? {
+          left: {
+            respiratory_wave: decoded?.left?.respiratory_wave ?? [],
+            heart_rate_wave: decoded?.left?.heart_rate_wave ?? [],
+          },
+          right: {
+            respiratory_wave: decoded?.right?.respiratory_wave ?? [],
+            heart_rate_wave: decoded?.right?.heart_rate_wave ?? [],
+          }
+        } : null
+      };
+    });
   }
 
   async autoEndExpiredDeviceSessions() {
@@ -242,26 +615,310 @@ export class MeditationSessionService extends BaseService {
       .andWhere('(a.lastActiveTime IS NULL AND a.startDate < :threshold OR a.lastActiveTime < :threshold)', {
         threshold,
       })
-      .select(['a.id', 'a.userId'])
+      .select(['a.id', 'a.userId', 'a.startDate', 'a.lastActiveTime'])
       .getMany();
 
     for (const s of sessions) {
       try {
-        await this.end(s.userId, s.id);
+        const endDateOverride = (s as any).lastActiveTime ?? (s as any).startDate;
+        const effectiveMs = endDateOverride.getTime() - (s as any).startDate.getTime();
+        const endReason = effectiveMs < timeout * 60 * 1000 ? 4 : 2;
+        await this.end(s.userId, s.id, endReason, endDateOverride);
       } catch (e) {}
     }
   }
 
-  private calcFocusScore(data: MeditationDataEntity[]) {
-    if (!data || data.length === 0) return 0;
-    const avgMovement =
-      data.reduce((sum, item) => sum + (item.bodyMovement || 0), 0) /
-      data.length;
-    const avgHeart =
-      data.reduce((sum, item) => sum + (item.heartRate || 0), 0) /
-      data.length;
-    const score = 100 - (avgMovement * 2 + (100 - avgHeart));
-    return Math.max(0, Math.min(100, Math.round(score)));
+  private calcMetrics(data: MeditationDataEntity[], startMs: number, endMs: number) {
+    const defaultMetrics = {
+      avgHeartRate: 0,
+      avgBreathRate: 0,
+      movementCount: 0,
+      hrvScore: 0,
+      hrvSource: 'none',
+      avgTemperature: 0,
+      avgHumidity: 0,
+      peaceRatio: 0,
+      relaxRatio: 0,
+      tensionRatio: 0,
+      anxietyRatio: 0,
+      attachmentRatio: 50,
+      sections: null,
+      sitCount: 0,
+    };
+
+    if (!data || data.length === 0) {
+      return { focusScore: 0, metrics: defaultMetrics };
+    }
+
+    // 判断左边还是右边有数据
+    let leftCount = 0;
+    let rightCount = 0;
+    for (const item of data) {
+      if (item.heartRate > 0 || item.breathRate > 0) leftCount++;
+      if (item.rightHeartRate > 0 || item.rightBreathRate > 0) rightCount++;
+    }
+    const useRight = rightCount > leftCount;
+
+    const validData = data
+      .map(item => ({
+        ...item,
+        activeHeartRate: useRight ? item.rightHeartRate : item.heartRate,
+        activeBreathRate: useRight ? item.rightBreathRate : item.breathRate,
+      }))
+      .sort((a, b) => (a.recordTimestamp || 0) - (b.recordTimestamp || 0));
+
+    // 1. 专注度评分
+    const avgMovement = validData.reduce((sum, item) => sum + (item.bodyMovement || 0), 0) / validData.length;
+    const avgHeart = validData.reduce((sum, item) => sum + (item.activeHeartRate || 0), 0) / validData.length;
+    const focusScoreRaw = 100 - (avgMovement * 2 + (100 - avgHeart));
+    const focusScore = Math.max(0, Math.min(100, Math.round(focusScoreRaw)));
+
+    // 2. 平均心率、呼吸率，体动次数
+    let validHeartCount = 0;
+    let validBreathCount = 0;
+    let sumHeart = 0;
+    let sumBreath = 0;
+    let movementCount = 0;
+    let validTempCount = 0;
+    let validHumidityCount = 0;
+    let sumTemp = 0;
+    let sumHumidity = 0;
+
+    for (const item of validData) {
+      if (item.activeHeartRate > 0) {
+        sumHeart += item.activeHeartRate;
+        validHeartCount++;
+      }
+      if (item.activeBreathRate > 0) {
+        sumBreath += item.activeBreathRate;
+        validBreathCount++;
+      }
+      if (item.bodyMovement > 0) {
+        movementCount++;
+      }
+      if (Number(item.temperature) > 0) {
+        sumTemp += Number(item.temperature);
+        validTempCount++;
+      }
+      if (Number(item.humidity) > 0) {
+        sumHumidity += Number(item.humidity);
+        validHumidityCount++;
+      }
+    }
+
+    const avgHeartRate = validHeartCount > 0 ? Math.round(sumHeart / validHeartCount) : 0;
+    const avgBreathRate = validBreathCount > 0 ? Math.round(sumBreath / validBreathCount) : 0;
+    const avgTemperature = validTempCount > 0 ? Number((sumTemp / validTempCount).toFixed(2)) : 0;
+    const avgHumidity = validHumidityCount > 0 ? Number((sumHumidity / validHumidityCount).toFixed(2)) : 0;
+
+    let hrvSource = 'none';
+    let hrvScore = 0;
+    const heartRates = validData.filter(d => d.activeHeartRate > 0).map(d => d.activeHeartRate);
+    if (heartRates.length > 1) {
+      let sumSqDiff = 0;
+      for (let i = 1; i < heartRates.length; i++) {
+        const diff = heartRates[i] - heartRates[i - 1];
+        sumSqDiff += diff * diff;
+      }
+      const rmssd = Math.sqrt(sumSqDiff / (heartRates.length - 1));
+      hrvScore = Math.max(0, Math.min(100, Math.round((rmssd / 50) * 100)));
+      hrvSource = 'heartRate';
+    }
+
+    // 4. 情绪云图占比 & 执着/厌离 占比
+    let peaceCount = 0;
+    let relaxCount = 0;
+    let tensionCount = 0;
+    let anxietyCount = 0;
+    
+    let attachmentCount = 0;
+    let aversionCount = 0;
+
+    for (const item of validData) {
+      const hr = item.activeHeartRate;
+      const mv = item.bodyMovement;
+      
+      if (hr <= 0) continue;
+
+      // 情绪云图 (基于心率与基线的偏差，以及体动)
+      // 假设静息心率基线为 avgHeartRate，高心率+高体动 = 焦虑(深红)
+      if (hr > avgHeartRate * 1.1 && mv > 0) {
+        anxietyCount++;
+      } else if (hr > avgHeartRate * 1.05) {
+        tensionCount++;
+      } else if (hr < avgHeartRate * 0.95 && mv === 0) {
+        peaceCount++;
+      } else {
+        relaxCount++;
+      }
+
+      // 执着与厌离
+      // 执着 (Attachment): 心率持续高于平均，但体动少 (专注但紧张)
+      if (hr > avgHeartRate && mv === 0) {
+        attachmentCount++;
+      }
+      // 厌离 (Aversion): 心率偏低但体动频繁 (烦躁不安，想离开)
+      else if (hr < avgHeartRate && mv > 0) {
+        aversionCount++;
+      }
+    }
+
+    const totalEmotion = peaceCount + relaxCount + tensionCount + anxietyCount;
+    let peaceRatio = 0,
+      relaxRatio = 0,
+      tensionRatio = 0,
+      anxietyRatio = 0;
+    if (totalEmotion > 0) {
+      const quantized = this.quantizeRatiosToTens([
+        peaceCount / totalEmotion * 100,
+        relaxCount / totalEmotion * 100,
+        tensionCount / totalEmotion * 100,
+        anxietyCount / totalEmotion * 100,
+      ]);
+      peaceRatio = quantized[0];
+      relaxRatio = quantized[1];
+      tensionRatio = quantized[2];
+      anxietyRatio = quantized[3];
+    }
+
+    let attachmentRatio = 50;
+    const validSampleCount = validData.filter(d => d.activeHeartRate > 0).length;
+    if (validSampleCount > 0) {
+      const aversionPercent = aversionCount / validSampleCount;
+      attachmentRatio = Math.max(1, Math.min(100, Math.round(aversionPercent * 99 + 1)));
+    }
+
+    const sitCount = this.calcSitCount(validData);
+    const sections = this.calcSections(validData, startMs, endMs);
+
+    return {
+      focusScore,
+      metrics: {
+        avgHeartRate,
+        avgBreathRate,
+        movementCount,
+        hrvScore,
+        hrvSource,
+        avgTemperature,
+        avgHumidity,
+        peaceRatio,
+        relaxRatio,
+        tensionRatio,
+        anxietyRatio,
+        attachmentRatio,
+        sections,
+        sitCount,
+      }
+    };
+  }
+
+  private calcSitCount(rows: any[]) {
+    if (!rows?.length) return 0;
+    let sitCount = 0;
+    let prev = null;
+    for (const r of rows) {
+      const cur = Number(r?.inBed ?? 0) ? 1 : 0;
+      if (cur === 1 && (prev === null || prev === 0)) sitCount++;
+      prev = cur;
+    }
+    return sitCount;
+  }
+
+  private calcSections(rows: any[], startMs: number, endMs: number) {
+    const s = Number(startMs || 0);
+    const e = Number(endMs || 0);
+    if (!rows?.length || !s || !e || e <= s) {
+      return Array.from({ length: 6 }).map((_, i) => ({
+        index: i + 1,
+        avgHeartRate: 0,
+        avgBreathRate: 0,
+        movementCount: 0,
+      }));
+    }
+
+    const totalMs = e - s;
+    const partMs = totalMs / 6;
+
+    const sections = [];
+    for (let i = 0; i < 6; i++) {
+      const segStart = s + partMs * i;
+      const segEnd = i === 5 ? e : s + partMs * (i + 1);
+
+      let sumHeart = 0;
+      let cntHeart = 0;
+      let sumBreath = 0;
+      let cntBreath = 0;
+      let movementCount = 0;
+
+      for (const r of rows) {
+        const ts = Number(r?.recordTimestamp ?? 0);
+        if (!ts) continue;
+        const inRange = i === 5 ? ts >= segStart && ts <= segEnd : ts >= segStart && ts < segEnd;
+        if (!inRange) continue;
+
+        const hr = Number(r?.activeHeartRate ?? 0) || 0;
+        const br = Number(r?.activeBreathRate ?? 0) || 0;
+        if (hr > 0) {
+          sumHeart += hr;
+          cntHeart++;
+        }
+        if (br > 0) {
+          sumBreath += br;
+          cntBreath++;
+        }
+        if (Number(r?.bodyMovement ?? 0) > 0) movementCount++;
+      }
+
+      sections.push({
+        index: i + 1,
+        avgHeartRate: cntHeart > 0 ? Math.round(sumHeart / cntHeart) : 0,
+        avgBreathRate: cntBreath > 0 ? Math.round(sumBreath / cntBreath) : 0,
+        movementCount,
+      });
+    }
+
+    return sections;
+  }
+
+  private quantizeRatiosToTens(rawRatios: number[]) {
+    const safe = rawRatios.map(v => (Number.isFinite(v) ? Math.max(0, v) : 0));
+    const rounded = safe.map(v => {
+      const x = Math.round(v / 10) * 10;
+      return Math.max(0, Math.min(100, x));
+    });
+
+    const total = rounded.reduce((a, b) => a + b, 0);
+    let diff = 100 - total;
+    if (diff === 0) return rounded;
+
+    const order = safe
+      .map((v, i) => ({
+        i,
+        frac: v - (Math.round(v / 10) * 10),
+      }))
+      .sort((a, b) => (diff > 0 ? b.frac - a.frac : a.frac - b.frac));
+
+    let guard = 0;
+    while (diff !== 0 && guard < 100) {
+      for (const { i } of order) {
+        if (diff === 0) break;
+        if (diff > 0) {
+          if (rounded[i] <= 90) {
+            rounded[i] += 10;
+            diff -= 10;
+          }
+        } else {
+          if (rounded[i] >= 10) {
+            rounded[i] -= 10;
+            diff += 10;
+          }
+        }
+      }
+      guard++;
+      if (guard >= 100) break;
+    }
+
+    return rounded;
   }
 
   private async calcAchievements(userId: number, endDate: Date) {

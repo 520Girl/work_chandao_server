@@ -1,7 +1,14 @@
-import { Body, Get, Inject, Post } from '@midwayjs/core';
+import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { MeditationSessionService } from '../../service/session';
-import { MeditationStartDTO, MeditationEndDTO, MeditationPollDTO } from '../../dto/session';
+import {
+  MeditationStartDTO,
+  MeditationEndDTO,
+  MeditationPollDTO,
+  MeditationDataListDTO,
+  MeditationReportHistoryPageDTO,
+  MeditationReportDetailDTO,
+} from '../../dto/session';
 import { Validate } from '@midwayjs/validate';
 
 /**
@@ -35,9 +42,7 @@ export class AppMeditationSessionController extends BaseController {
   @Post('/end', { summary: '结束冥想' })
   @Validate()
   async end(@Body() body: MeditationEndDTO) {
-    return this.ok(
-      await this.meditationSessionService.end(this.ctx.user.id, body.sessionId)
-    );
+    return this.ok(await this.meditationSessionService.endStatus(this.ctx.user.id, body.sessionId));
   }
 
   @Post('/poll', { summary: '轮询冥想状态' })
@@ -49,9 +54,37 @@ export class AppMeditationSessionController extends BaseController {
   }
 
   @Get('/report/history', { summary: '报告历史' })
-  async reportHistory() {
+  async reportHistory(@Query('page') pageRaw: any, @Query('size') sizeRaw: any) {
+    const page = Number(pageRaw ?? 0) || 0;
+    const size = Number(sizeRaw ?? 0) || 0;
+    if (page > 0 || size > 0) {
+      return this.ok(
+        await this.meditationSessionService.reportHistoryPage(
+          this.ctx.user.id,
+          page || 1,
+          size || 20
+        )
+      );
+    }
+    return this.ok(await this.meditationSessionService.reportHistory(this.ctx.user.id));
+  }
+
+  @Get('/report/detail', { summary: '某次冥想报告详情' })
+  @Validate()
+  async reportDetail(@Query() query: MeditationReportDetailDTO) {
     return this.ok(
-      await this.meditationSessionService.reportHistory(this.ctx.user.id)
+      await this.meditationSessionService.reportDetail(
+        this.ctx.user.id,
+        query.sessionId
+      )
+    );
+  }
+
+  @Get('/data/list', { summary: '获取某次会话的详细生理数据' })
+  @Validate()
+  async dataList(@Query() query: MeditationDataListDTO) {
+    return this.ok(
+      await this.meditationSessionService.getSessionDataList(this.ctx.user.id, query.sessionId)
     );
   }
 }

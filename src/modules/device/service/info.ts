@@ -7,6 +7,7 @@ import { DeviceInfoEntity } from '../entity/info';
 import { MeditationDataEntity } from '../../meditation/entity/data';
 import { MeditationSessionEntity } from '../../meditation/entity/session';
 import { DeviceSoapService } from './soap';
+import { BaseSysParamService } from '../../base/service/sys/param';
 import * as zlib from 'zlib';
 
 /**
@@ -25,6 +26,9 @@ export class DeviceInfoService extends BaseService {
 
   @Inject()
   deviceSoapService: DeviceSoapService;
+
+  @Inject()
+  baseSysParamService: BaseSysParamService;
 
   @Config('device')
   deviceConfig;
@@ -145,27 +149,30 @@ export class DeviceInfoService extends BaseService {
     return info;
   }
 
-  async getDeviceRealtimeData(mac: string) {
+  async getDeviceRealtimeData(mac: string, options?: { timestamp?: number; waveform?: boolean }) {
     const key = this.deviceConfig.secretKey;
-    const resp = await this.deviceSoapService.call('GetDeviceRealtimeData', { key, mac });
+    const timestamp = Number(options?.timestamp ?? 0) || 0;
+    const waveform = options?.waveform === true;
+    const resp = await this.deviceSoapService.call('GetDeviceRealtimeData', { key, mac, timestamp, waveform });
     return resp;
   }
 
   async getMeditationRealtimeData(mac: string) {
-    const resp = await this.getDeviceRealtimeData(mac);
-    const saved = await this.saveMeditationRealtimeData(mac, resp);
-    return { resp, saved };
-  }
-
-  private async saveMeditationRealtimeData(mac: string, resp: any) {
     const device = await this.deviceInfoEntity.findOne({ where: { mac } });
-    if (!device) return null;
+    if (!device) return { resp: null, saved: null };
 
     const session = await this.meditationSessionEntity.findOne({
       where: { sn: device.sn, status: 1 },
       order: { id: 'DESC' },
     });
-    if (!session) return null;
+    if (!session) return { resp: null, saved: null };
+
+    const resp = await this.getDeviceRealtimeData(mac, { timestamp: 0, waveform: true });
+    const saved = await this.saveMeditationRealtimeData(session.id, resp);
+    return { resp, saved };
+  }
+
+  private async saveMeditationRealtimeData(sessionId: number, resp: any) {
 
     const samples = Array.isArray(resp?.data)
       ? resp.data
@@ -174,8 +181,67 @@ export class DeviceInfoService extends BaseService {
         : [];
     if (!samples.length) return null;
 
-    let lastSaved: MeditationDataEntity = null;
+    const maxSaveParam = await this.baseSysParamService.dataByKey(
+      'MEDITATION_REALTIME_MAX_SAVE_PER_POLL'
+    );
+    const maxSavePerPoll = Math.max(1, Number(maxSaveParam ?? 5) || 5);
+
+    const waveSampleIntervalParam = await this.baseSysParamService.dataByKey(
+      'MEDITATION_WAVE_SAVE_INTERVAL_MS'
+    );
+    const waveSampleIntervalMs = Number(waveSampleIntervalParam ?? 10000) || 10000;
+    const lastWaveRow: any = await this.meditationDataEntity
+      .createQueryBuilder('d')
+      .select(['d.recordTimestamp as recordTimestamp'])
+      .where('d.sessionId = :sessionId', { sessionId })
+      .andWhere('d.waveBlob IS NOT NULL')
+      .orderBy('d.recordTimestamp', 'DESC')
+      .getRawOne();
+    let lastWaveTimestamp = Number(lastWaveRow?.recordTimestamp ?? 0) || 0;
+
+    const getWavesSize = (sample: any) => {
+      const left = sample?.left ?? {};
+      const right = sample?.right ?? {};
+      const leftRespWave = left?.respiratory_wave ?? left?.respiratoryWave ?? [];
+      const leftHrWave = left?.heart_rate_wave ?? left?.heartRateWave ?? [];
+      const rightRespWave = right?.respiratory_wave ?? right?.respiratoryWave ?? [];
+      const rightHrWave = right?.heart_rate_wave ?? right?.heartRateWave ?? [];
+      return (
+        (Array.isArray(leftRespWave) ? leftRespWave.length : 0) +
+        (Array.isArray(leftHrWave) ? leftHrWave.length : 0) +
+        (Array.isArray(rightRespWave) ? rightRespWave.length : 0) +
+        (Array.isArray(rightHrWave) ? rightHrWave.length : 0)
+      );
+    };
+
+    const dedupMap = new Map<number, any>();
     for (const sample of samples) {
+      const recordTimestamp = Number(sample?.id ?? resp?.timestamp ?? Date.now()) || Date.now();
+      const existing = dedupMap.get(recordTimestamp);
+      if (!existing) {
+        dedupMap.set(recordTimestamp, sample);
+        continue;
+      }
+      if (getWavesSize(sample) > getWavesSize(existing)) {
+        dedupMap.set(recordTimestamp, sample);
+      }
+    }
+
+    const deduped = Array.from(dedupMap.entries())
+      .map(([recordTimestamp, sample]) => ({ recordTimestamp, sample }))
+      .sort((a, b) => a.recordTimestamp - b.recordTimestamp);
+
+    const selected =
+      deduped.length > maxSavePerPoll ? deduped.slice(deduped.length - maxSavePerPoll) : deduped;
+    const maxSelectedTimestamp = selected?.[selected.length - 1]?.recordTimestamp ?? 0;
+    if (maxSelectedTimestamp && lastWaveTimestamp > maxSelectedTimestamp) {
+      lastWaveTimestamp = 0;
+    }
+
+    const rows: Partial<MeditationDataEntity>[] = [];
+    for (const item of selected) {
+      const recordTimestamp = item.recordTimestamp;
+      const sample = item.sample;
       const left = sample?.left ?? {};
       const right = sample?.right ?? {};
 
@@ -184,31 +250,55 @@ export class DeviceInfoService extends BaseService {
       const rightRespWave = right?.respiratory_wave ?? right?.respiratoryWave ?? [];
       const rightHrWave = right?.heart_rate_wave ?? right?.heartRateWave ?? [];
 
-      const recordTimestamp = Number(sample?.id ?? resp?.timestamp ?? Date.now()) || Date.now();
       const inBed = sample?.inbed === true || sample?.inBed === true ? 1 : 0;
 
       let bodyMovement = sample?.body_movement ?? sample?.bodyMovement ?? 0;
       if (typeof bodyMovement === 'boolean') bodyMovement = bodyMovement ? 1 : 0;
 
-      lastSaved = await this.meditationDataEntity.save({
-        sessionId: session.id,
-        recordTimestamp,
-        heartRate: Number(left?.heart_rate ?? left?.heartRate ?? 0) || 0,
-        breathRate: Number(left?.respiration_rate ?? left?.respirationRate ?? 0) || 0,
-        inBed,
-        bodyMovement: Number(bodyMovement) || 0,
-        waveBlob: zlib.gzipSync(
+      let waveBlob: Buffer = null;
+      if (recordTimestamp - lastWaveTimestamp >= waveSampleIntervalMs) {
+        lastWaveTimestamp = recordTimestamp;
+        waveBlob = zlib.gzipSync(
           Buffer.from(
             JSON.stringify({
               left: { respiratory_wave: leftRespWave, heart_rate_wave: leftHrWave },
               right: { respiratory_wave: rightRespWave, heart_rate_wave: rightHrWave },
             })
           )
-        ),
+        );
+      }
+
+      rows.push({
+        sessionId,
+        recordTimestamp,
+        heartRate: Number(left?.heart_rate ?? left?.heartRate ?? 0) || 0,
+        breathRate: Number(left?.respiration_rate ?? left?.respirationRate ?? 0) || 0,
+        rightHeartRate: Number(right?.heart_rate ?? right?.heartRate ?? 0) || 0,
+        rightBreathRate: Number(right?.respiration_rate ?? right?.respirationRate ?? 0) || 0,
+        temperature: Number(sample?.temperature ?? 0) || 0,
+        humidity: Number(sample?.humidity ?? 0) || 0,
+        inBed,
+        bodyMovement: Number(bodyMovement) || 0,
+        waveBlob,
       });
     }
 
-    return lastSaved;
+    if (!rows.length) return null;
+
+    let lastInserted: Partial<MeditationDataEntity> = null;
+    try {
+      await this.meditationDataEntity.insert(rows as any);
+      lastInserted = rows[rows.length - 1];
+    } catch (e) {
+      for (const row of rows) {
+        try {
+          await this.meditationDataEntity.insert(row as any);
+          lastInserted = row;
+        } catch (e2) {}
+      }
+    }
+
+    return lastInserted;
   }
 
   /**
@@ -257,17 +347,25 @@ export class DeviceInfoService extends BaseService {
   /**
    * 获取睡眠报告列表
    */
-  async getSleepReports(mac: string, startDate: string, endDate: string) {
+  async getSleepReports(mac: string, start_date: string, end_date: string) {
     const key = this.deviceConfig.secretKey;
-    return await this.deviceSoapService.call('GetSleepReportsByDateRange', { key, mac, startDate, endDate });
+    return await this.deviceSoapService.call('GetSleepReportsByDateRange', { key, mac, start_date, end_date });
   }
 
   /**
    * 获取睡眠报告详情
    */
-  async getSleepReportDetail(reportId: string) {
+  async getSleepReportDetail(report_id: number) {
     const key = this.deviceConfig.secretKey;
-    return await this.deviceSoapService.call('GetSleepReportDetailByReportId', { key, reportId });
+    return await this.deviceSoapService.call('GetSleepReportDetailByReportId', { key, report_id });
+  }
+
+  /**
+   * 获取实时睡眠报告
+   */
+  async getRealtimeSleepReport(mac: string) {
+    const key = this.deviceConfig.secretKey;
+    return await this.deviceSoapService.call('GetRealtimeSleepReport', { key, mac });
   }
 
   /**

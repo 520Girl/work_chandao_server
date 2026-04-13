@@ -1,0 +1,3 @@
+ALTER TABLE base_sys_param
+  MODIFY COLUMN remark VARCHAR(1500) NULL COMMENT '备注';
+

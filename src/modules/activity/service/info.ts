@@ -463,9 +463,10 @@ export class ActivityInfoService extends BaseService {
       throw new CoolCommException('请先报名活动再打卡~');
     }
 
-    const ipRaw = this.ctx ? await this.utils.getReqIP(this.ctx) : '';
+    const ctxHasHeaders = !!this.ctx?.request?.headers;
+    const ipRaw = ctxHasHeaders ? await this.utils.getReqIP(this.ctx) : '';
     const ip = String(ipRaw ?? '').split(',')[0].trim();
-    const uaRaw = this.ctx?.get?.('user-agent');
+    const uaRaw = ctxHasHeaders ? this.ctx?.get?.('user-agent') : '';
     const ua = String(uaRaw ?? '');
 
     const checkinMode = Number(activity.checkinMode) || 1;

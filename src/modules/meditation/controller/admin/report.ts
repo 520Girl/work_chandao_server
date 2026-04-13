@@ -11,7 +11,34 @@ import { UserInfoEntity } from '../../../user/entity/info';
   api: ['add', 'delete', 'update', 'info', 'list', 'page'],
   entity: MeditationReportEntity,
   pageQueryOp: {
-    select: ['a.*', 'b.sn', 'c.model', 'd.nickName', 'd.avatarUrl'],
+    where: async (ctx) => {
+      const body = ctx?.request?.body ?? {};
+      const result: any[] = [];
+
+      if (body.sn) {
+        result.push(['b.sn LIKE :sn', { sn: `%${body.sn}%` }]);
+      }
+      if (body.sessionType != null && body.sessionType !== '') {
+        result.push(['b.type = :sessionType', { sessionType: body.sessionType }]);
+      }
+      if (body.endReason != null && body.endReason !== '') {
+        result.push(['b.endReason = :endReason', { endReason: body.endReason }]);
+      }
+      if (body.focusScore != null && body.focusScore !== '') {
+        result.push(['a.focusScore >= :focusScore', { focusScore: body.focusScore }]);
+      }
+
+      return result;
+    },
+    select: [
+      'a.*',
+      'b.sn',
+      'b.type as sessionType',
+      'b.endReason as endReason',
+      'c.model',
+      'd.nickName',
+      'd.avatarUrl',
+    ],
     join: [
       {
         entity: MeditationSessionEntity,
@@ -22,6 +49,7 @@ import { UserInfoEntity } from '../../../user/entity/info';
         entity: DeviceInfoEntity,
         alias: 'c',
         condition: 'b.sn = c.sn',
+        type: 'leftJoin',
       },
       {
         entity: UserInfoEntity,

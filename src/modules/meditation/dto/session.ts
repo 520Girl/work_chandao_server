@@ -46,6 +46,9 @@ export class MeditationEndDTO {
    */
   @Rule(RuleType.number().required())
   sessionId: number;
+
+  @Rule(RuleType.boolean().optional())
+  debug?: boolean;
 }
 
 /**
@@ -61,5 +64,30 @@ export class MeditationPollDTO {
    * @example 1
    */
   @Rule(RuleType.number())
+  sessionId: number;
+}
+
+/**
+ * 会话生理数据详情
+ */
+export class MeditationDataListDTO {
+  /**
+   * 会话ID
+   * @example 1
+   */
+  @Rule(RuleType.number().required())
+  sessionId: number;
+}
+
+export class MeditationReportHistoryPageDTO {
+  @Rule(RuleType.number().min(1).optional())
+  page: number;
+
+  @Rule(RuleType.number().min(1).max(100).optional())
+  size: number;
+}
+
+export class MeditationReportDetailDTO {
+  @Rule(RuleType.number().required())
   sessionId: number;
 }

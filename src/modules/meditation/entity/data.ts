@@ -17,8 +17,20 @@ export class MeditationDataEntity extends BaseEntity {
   @Column({ comment: '心率', default: 0 })
   heartRate: number;
 
-  @Column({ comment: '呼吸率', default: 0 })
+  @Column({ comment: '呼吸率', type: 'double', default: 0 })
   breathRate: number;
+
+  @Column({ comment: '右侧心率', default: 0 })
+  rightHeartRate: number;
+
+  @Column({ comment: '右侧呼吸率', type: 'double', default: 0 })
+  rightBreathRate: number;
+
+  @Column({ comment: '室内温度', type: 'double', default: 0 })
+  temperature: number;
+
+  @Column({ comment: '相对湿度', type: 'double', default: 0 })
+  humidity: number;
 
   @Column({ comment: '在座状态', dict: ['离座', '在座'], default: 0 })
   inBed: number;

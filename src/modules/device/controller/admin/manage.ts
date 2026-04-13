@@ -13,6 +13,7 @@ import {
   DeviceSetWarningSettingDTO, 
   DeviceSleepReportDTO, 
   DeviceSleepReportDetailDTO, 
+  DeviceRealtimeSleepReportDTO,
   DeviceVoiceAlertDTO 
 } from '../../dto/manage';
 
@@ -49,6 +50,21 @@ export class AdminDeviceManageController extends BaseController {
   }
 
   /**
+   * 刷新设备状态（写入 device_info.status/statusUpdateTime）
+   */
+  @Post('/refresh-status', { summary: '刷新设备状态' })
+  @Validate()
+  async refreshStatus(@Body() body: DeviceRealtimeDTO) {
+    await this.deviceInfoService.refreshDeviceStatusFromCloud(body.mac);
+    const device = await this.deviceInfoService.deviceInfoEntity.findOneBy({ mac: body.mac });
+    return this.ok({
+      mac: body.mac,
+      status: device?.status ?? null,
+      statusUpdateTime: device?.statusUpdateTime ?? null,
+    });
+  }
+
+  /**
    * 获取预警信息
    */
   @Get('/warning-info', { summary: '获取设备预警信息' })
@@ -78,11 +94,12 @@ export class AdminDeviceManageController extends BaseController {
 
   /**
    * 获取睡眠报告列表
+   * 
    */
   @Get('/sleep-reports', { summary: '获取睡眠报告列表' })
   @Validate()
   async getSleepReports(@Query() query: DeviceSleepReportDTO) {
-    return this.ok(await this.deviceInfoService.getSleepReports(query.mac, query.startDate, query.endDate));
+    return this.ok(await this.deviceInfoService.getSleepReports(query.mac, query.start_date, query.end_date));
   }
 
   /**
@@ -91,7 +108,16 @@ export class AdminDeviceManageController extends BaseController {
   @Get('/sleep-report-detail', { summary: '获取睡眠报告详情' })
   @Validate()
   async getSleepReportDetail(@Query() query: DeviceSleepReportDetailDTO) {
-    return this.ok(await this.deviceInfoService.getSleepReportDetail(query.reportId));
+    return this.ok(await this.deviceInfoService.getSleepReportDetail(Number(query.report_id)));
+  }
+
+  /**
+   * 获取实时睡眠报告
+   */
+  @Get('/realtime-sleep-report', { summary: '获取实时睡眠报告' })
+  @Validate()
+  async getRealtimeSleepReport(@Query() query: DeviceRealtimeSleepReportDTO) {
+    return this.ok(await this.deviceInfoService.getRealtimeSleepReport(query.mac));
   }
 
   /**

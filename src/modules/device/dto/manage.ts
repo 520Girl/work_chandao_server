@@ -118,24 +118,37 @@ export class DeviceSetWarningSettingDTO {
 
 /**
  * 获取睡眠报告列表请求
+ * 
+ * start_date: 开始时间
+ * end_date: 结束时间
+ * 格式为: 2026-04-11 23:40:00
+ * 注意: 开始时间不能大于结束时间
  */
 export class DeviceSleepReportDTO {
   @Rule(RuleType.string().required())
   mac: string;
 
   @Rule(RuleType.string().required())
-  startDate: string;
+  start_date: string;
 
   @Rule(RuleType.string().required())
-  endDate: string;
+  end_date: string;
 }
 
 /**
  * 获取睡眠报告详情请求
  */
 export class DeviceSleepReportDetailDTO {
+  @Rule(RuleType.number().required())
+  report_id: number;
+}
+
+/**
+ * 获取实时睡眠报告请求
+ */
+export class DeviceRealtimeSleepReportDTO {
   @Rule(RuleType.string().required())
-  reportId: string;
+  mac: string;
 }
 
 /**
