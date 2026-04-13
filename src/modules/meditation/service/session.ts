@@ -598,6 +598,300 @@ export class MeditationSessionService extends BaseService {
     });
   }
 
+  async reportStatistics(userId: number, range = 'week') {
+    const supportedRanges = ['day', 'week', 'month'];
+    const normalizedRange = supportedRanges.includes(range) ? range : 'week';
+
+    const currentPeriodRange = this.getPeriodRange(normalizedRange, 0);
+    const previousPeriodRange = this.getPeriodRange(normalizedRange, -1);
+    const currentStart = this.formatDateTime(currentPeriodRange.start);
+    const currentEnd = this.formatDateTime(currentPeriodRange.end);
+    const previousStart = this.formatDateTime(previousPeriodRange.start);
+    const previousEnd = this.formatDateTime(previousPeriodRange.end);
+
+    const [currentStats, previousStats, latestSessionInfo, last7Sessions] = await Promise.all([
+      this.aggregatePeriod(userId, currentStart, currentEnd),
+      this.aggregatePeriod(userId, previousStart, previousEnd),
+      this.queryLatestSession(userId),
+      this.queryLast7Sessions(userId),
+    ]);
+
+    const [currentBuckets, previousBuckets] = await Promise.all([
+      this.querySevenBuckets(userId, currentStart, currentEnd, normalizedRange),
+      this.querySevenBuckets(userId, previousStart, previousEnd, normalizedRange),
+    ]);
+
+    const last7SessionsTotalMinutes = last7Sessions.reduce(
+      (sum, item) => sum + (item.durationMinutes || 0),
+      0
+    );
+
+    let previousName: string;
+    let currentName: string;
+    if (normalizedRange === 'week') {
+      previousName = '上周';
+      currentName = '本周';
+    } else if (normalizedRange === 'month') {
+      previousName = '上月';
+      currentName = '本月';
+    } else {
+      previousName = '昨天';
+      currentName = '今天';
+    }
+
+    const durationChartData = {
+      categories: currentBuckets.map(b => b.label),
+      series: [
+        {
+          name: '时长',
+          data: currentBuckets.map(b => this.round2(b.totalDurationMinutes)),
+        },
+      ],
+    };
+
+    const compareChartData = {
+      categories: currentBuckets.map(b => b.label),
+      series: [
+        { name: `心率（${previousName}）`, data: previousBuckets.map(b => this.round2(b.avgHeartRate)) },
+        { name: `心率（${currentName}）`, data: currentBuckets.map(b => this.round2(b.avgHeartRate)) },
+        { name: `呼吸率（${previousName}）`, data: previousBuckets.map(b => this.round2(b.avgBreathRate)) },
+        { name: `呼吸率（${currentName}）`, data: currentBuckets.map(b => this.round2(b.avgBreathRate)) },
+        { name: `体动（${previousName}）`, data: previousBuckets.map(b => this.round2(b.movementCount)) },
+        { name: `体动（${currentName}）`, data: currentBuckets.map(b => this.round2(b.movementCount)) },
+        { name: `时长（${previousName}）`, data: previousBuckets.map(b => this.round2(b.totalDurationMinutes)) },
+        { name: `时长（${currentName}）`, data: currentBuckets.map(b => this.round2(b.totalDurationMinutes)) },
+      ],
+    };
+
+    return {
+      range: normalizedRange,
+      bucketCount: 7,
+      currentPeriod: {
+        rangeStart: currentStart,
+        rangeEnd: currentEnd,
+        ...currentStats,
+        latestSessionId: latestSessionInfo.sessionId,
+        latestSessionMinutes: latestSessionInfo.durationMinutes,
+      },
+      previousPeriod: {
+        rangeStart: previousStart,
+        rangeEnd: previousEnd,
+        ...previousStats,
+      },
+      latestSessionMinutes: latestSessionInfo.durationMinutes,
+      last7SessionsTotalMinutes,
+      last7Sessions,
+      trend: currentBuckets.map(b => ({
+        ...b,
+        totalDurationMinutes: this.round2(b.totalDurationMinutes),
+        avgHeartRate: this.round2(b.avgHeartRate),
+        avgBreathRate: this.round2(b.avgBreathRate),
+        movementCount: this.round2(b.movementCount),
+      })),
+      durationChartData,
+      compareChartData,
+    };
+  }
+
+  private getPeriodRange(range: string, offset: number) {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (range === 'day') {
+      const start = new Date(now);
+      start.setDate(start.getDate() + offset);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 1);
+      return { start, end };
+    }
+
+    if (range === 'week') {
+      const day = now.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const start = new Date(now);
+      start.setDate(now.getDate() + diff + offset * 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 7);
+      return { start, end };
+    }
+
+    const start = new Date(now.getFullYear(), now.getMonth() + offset, 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1, 0, 0, 0, 0);
+    return { start, end };
+  }
+
+  private formatDateTime(d: Date) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  /** 图表数值：有小数时保留两位 */
+  private round2(n: number) {
+    return Math.round((Number(n) || 0) * 100) / 100;
+  }
+
+  /** 报告总时长（秒）→ 展示用分钟，不足 1 分钟保留小数（固定两位） */
+  private totalDurationSecondsToMinutes(seconds: number) {
+    return Number(((Number(seconds) || 0) / 60).toFixed(2));
+  }
+
+  private async aggregatePeriod(userId: number, start: string, end: string) {
+    const sql = `
+      SELECT
+        COUNT(1) AS sessionCount,
+        COALESCE(SUM(r.totalDuration), 0) AS totalDurationSeconds,
+        COALESCE(AVG(NULLIF(r.avgHeartRate, 0)), 0) AS avgHeartRate,
+        COALESCE(AVG(NULLIF(r.avgBreathRate, 0)), 0) AS avgBreathRate,
+        COALESCE(SUM(r.movementCount), 0) AS movementCount
+      FROM meditation_report r
+      INNER JOIN meditation_session s ON s.id = r.sessionId
+      WHERE s.userId = ?
+        AND s.status = 2
+        AND s.endDate >= ?
+        AND s.endDate < ?
+    `;
+    const rows: any[] = await this.meditationReportEntity.manager.query(sql, [userId, start, end]);
+    const row = rows?.[0] || {};
+    const totalDurationSeconds = Number(row.totalDurationSeconds || 0);
+    const totalDurationMinutes = this.totalDurationSecondsToMinutes(totalDurationSeconds);
+
+    return {
+      sessionCount: Number(row.sessionCount || 0),
+      totalDurationMinutes,
+      avgHeartRate: Number(row.avgHeartRate || 0),
+      avgBreathRate: Number(row.avgBreathRate || 0),
+      movementCount: Number(row.movementCount || 0),
+      avgMovementPerMinute:
+        totalDurationMinutes > 0
+          ? Number((Number(row.movementCount || 0) / totalDurationMinutes).toFixed(2))
+          : 0,
+    };
+  }
+
+  /** 用户全局最近一次已结束会话（与统计周期无关） */
+  private async queryLatestSession(userId: number) {
+    const sql = `
+      SELECT
+        s.id AS sessionId,
+        ROUND(r.totalDuration / 60, 2) AS durationMinutes
+      FROM meditation_report r
+      INNER JOIN meditation_session s ON s.id = r.sessionId
+      WHERE s.userId = ?
+        AND s.status = 2
+        AND s.endDate IS NOT NULL
+      ORDER BY s.endDate DESC
+      LIMIT 1
+    `;
+    const rows: any[] = await this.meditationReportEntity.manager.query(sql, [userId]);
+    const row = rows?.[0];
+    return {
+      sessionId: Number(row?.sessionId || 0),
+      durationMinutes: Number(row?.durationMinutes || 0),
+    };
+  }
+
+  private async queryLast7Sessions(userId: number) {
+    const sql = `
+      SELECT
+        s.id AS sessionId,
+        s.startDate AS startDate,
+        s.endDate AS endDate,
+        ROUND(r.totalDuration / 60, 2) AS durationMinutes,
+        r.avgHeartRate AS avgHeartRate,
+        r.avgBreathRate AS avgBreathRate,
+        r.movementCount AS movementCount
+      FROM meditation_report r
+      INNER JOIN meditation_session s ON s.id = r.sessionId
+      WHERE s.userId = ?
+        AND s.status = 2
+        AND s.endDate IS NOT NULL
+      ORDER BY s.endDate DESC
+      LIMIT 7
+    `;
+    const rows: any[] = await this.meditationReportEntity.manager.query(sql, [userId]);
+    return rows.map(row => ({
+      sessionId: Number(row.sessionId || 0),
+      startDate: row.startDate || null,
+      endDate: row.endDate || null,
+      durationMinutes: Number(row.durationMinutes || 0),
+      avgHeartRate: Number(row.avgHeartRate || 0),
+      avgBreathRate: Number(row.avgBreathRate || 0),
+      movementCount: Number(row.movementCount || 0),
+    }));
+  }
+
+  /** SQL 日期时间字符串转 Date（本地解析） */
+  private parseSqlDateTime(s: string) {
+    return new Date(String(s).replace(' ', 'T'));
+  }
+
+  /** 7 等分时间桶的横轴文案：周=星期，日=桶起点时分，月=月/日 */
+  private bucketAxisLabel(index: number, normalizedRange: string, segmentStartStr: string) {
+    const d = this.parseSqlDateTime(segmentStartStr);
+    if (normalizedRange === 'week') {
+      const w = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return w[d.getDay()] ?? `段${index + 1}`;
+    }
+    if (normalizedRange === 'day') {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  /**
+   * 将 [rangeStart, rangeEnd) 等分为 7 段，分别聚合冥想时长等指标（保证图表与 trend 恒为 7 点）
+   */
+  private async querySevenBuckets(
+    userId: number,
+    rangeStartStr: string,
+    rangeEndStr: string,
+    normalizedRange: string
+  ) {
+    const start = this.parseSqlDateTime(rangeStartStr);
+    const end = this.parseSqlDateTime(rangeEndStr);
+    const totalMs = end.getTime() - start.getTime();
+
+    const empty = (i: number) => ({
+      index: i,
+      label: `段${i + 1}`,
+      rangeStart: rangeStartStr,
+      rangeEnd: rangeEndStr,
+      totalDurationMinutes: 0,
+      sessionCount: 0,
+      avgHeartRate: 0,
+      avgBreathRate: 0,
+      movementCount: 0,
+    });
+
+    if (!Number.isFinite(totalMs) || totalMs <= 0) {
+      return Array.from({ length: 7 }, (_, i) => empty(i));
+    }
+
+    const segMs = totalMs / 7;
+    const tasks = [];
+    for (let i = 0; i < 7; i++) {
+      const segStart = new Date(start.getTime() + i * segMs);
+      const segEnd = new Date(start.getTime() + (i + 1) * segMs);
+      const startStr = this.formatDateTime(segStart);
+      const endStr = this.formatDateTime(segEnd);
+      tasks.push(
+        this.aggregatePeriod(userId, startStr, endStr).then(stats => ({
+          index: i,
+          label: this.bucketAxisLabel(i, normalizedRange, startStr),
+          rangeStart: startStr,
+          rangeEnd: endStr,
+          totalDurationMinutes: stats.totalDurationMinutes,
+          sessionCount: stats.sessionCount,
+          avgHeartRate: stats.avgHeartRate,
+          avgBreathRate: stats.avgBreathRate,
+          movementCount: stats.movementCount,
+        }))
+      );
+    }
+    return Promise.all(tasks);
+  }
+
   async autoEndExpiredDeviceSessions() {
     const enabled = await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_JOB_ENABLED');
     if (enabled === 0 || enabled === '0' || enabled === false) return;

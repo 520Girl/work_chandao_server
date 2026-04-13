@@ -91,3 +91,67 @@ export class MeditationReportDetailDTO {
   @Rule(RuleType.number().required())
   sessionId: number;
 }
+
+export class MeditationReportStatisticsDTO {
+  @Rule(RuleType.string().valid('day', 'week', 'month').default('week'))
+  range: string;
+}
+
+/** 单周期汇总（整段） */
+export interface MeditationPeriodStats {
+  rangeStart: string;
+  rangeEnd: string;
+  sessionCount: number;
+  totalDurationMinutes: number;
+  avgHeartRate: number;
+  avgBreathRate: number;
+  movementCount: number;
+  avgMovementPerMinute: number;
+}
+
+/** 当前周期汇总：在整段汇总上附带「全局最近一次已结束会话」 */
+export interface MeditationCurrentPeriodStats extends MeditationPeriodStats {
+  latestSessionId: number;
+  latestSessionMinutes: number;
+}
+
+/** 将当前/上一周期各拆成 7 个等长时间桶（用于趋势与图表，保证 7 个点） */
+export interface MeditationReportStatisticsBucket {
+  index: number;
+  label: string;
+  rangeStart: string;
+  rangeEnd: string;
+  totalDurationMinutes: number;
+  sessionCount: number;
+  avgHeartRate: number;
+  avgBreathRate: number;
+  movementCount: number;
+}
+
+export interface MeditationReportStatisticsResponse {
+  range: string;
+  /** 固定为 7：日/周/月图表与 trend 均为 7 个时间桶 */
+  bucketCount: number;
+  currentPeriod: MeditationCurrentPeriodStats;
+  previousPeriod: MeditationPeriodStats;
+  latestSessionMinutes: number;
+  last7SessionsTotalMinutes: number;
+  last7Sessions: any[];
+  /** 当前周期 7 段时间桶（含 rangeStart/rangeEnd） */
+  trend: MeditationReportStatisticsBucket[];
+  durationChartData: {
+    categories: string[];
+    series: {
+      name: string;
+      data: number[];
+    }[];
+  };
+  /** 8 条线：心率/呼吸率/体动/时长 ×（上一周期、当前周期），data 均为 7 桶，数值保留两位小数 */
+  compareChartData: {
+    categories: string[];
+    series: {
+      name: string;
+      data: number[];
+    }[];
+  };
+}

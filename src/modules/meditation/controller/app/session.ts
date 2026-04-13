@@ -8,6 +8,7 @@ import {
   MeditationDataListDTO,
   MeditationReportHistoryPageDTO,
   MeditationReportDetailDTO,
+  MeditationReportStatisticsDTO,
 } from '../../dto/session';
 import { Validate } from '@midwayjs/validate';
 
@@ -76,6 +77,17 @@ export class AppMeditationSessionController extends BaseController {
       await this.meditationSessionService.reportDetail(
         this.ctx.user.id,
         query.sessionId
+      )
+    );
+  }
+
+  @Get('/report/statistics', { summary: '冥想统计对比数据' })
+  @Validate()
+  async reportStatistics(@Query() query: MeditationReportStatisticsDTO) {
+    return this.ok(
+      await this.meditationSessionService.reportStatistics(
+        this.ctx.user.id,
+        query.range
       )
     );
   }
