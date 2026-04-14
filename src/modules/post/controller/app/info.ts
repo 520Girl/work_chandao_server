@@ -3,7 +3,7 @@ import { BaseController, CoolController } from '@cool-midway/core';
 import { PostInfoService } from '../../service/info';
 import { PostShareDTO, PostManualDTO, PostUpdateDTO, PostLikeDTO } from '../../dto/info';
 import { Validate } from '@midwayjs/validate';
-import { PostFeedQueryDTO } from '../../dto/feed';
+import { PostFeedQueryDTO, PostFeedTeamsQueryDTO } from '../../dto/feed';
 import { PostDeleteDTO } from '../../dto/action';
 
 /**
@@ -71,15 +71,30 @@ export class AppPostInfoController extends BaseController {
   }
 
   @Get('/feed', { summary: '动态流' })
+  @Validate()
   async feed(@Query() query: PostFeedQueryDTO) {
     return this.ok(
-      await this.postInfoService.feed(this.ctx.user.id, query?.page, query?.size, query?.publishStatus)
+      await this.postInfoService.feed(
+        this.ctx.user.id,
+        query.page ?? 1,
+        query.size ?? 20,
+        query.publishStatus,
+        query.teamId
+      )
     );
   }
 
   @Get('/feed/teams', { summary: '团队动态流' })
-  async feedTeams(@Query('page') page: number = 1, @Query('size') size: number = 20) {
-    return this.ok(await this.postInfoService.feedTeams(this.ctx.user.id, page, size));
+  @Validate()
+  async feedTeams(@Query() query: PostFeedTeamsQueryDTO) {
+    return this.ok(
+      await this.postInfoService.feedTeams(
+        this.ctx.user.id,
+        query.page ?? 1,
+        query.size ?? 20,
+        query.teamId
+      )
+    );
   }
 
   @Get('/feed/mixed', { summary: '融合动态流（动态+活动）' })

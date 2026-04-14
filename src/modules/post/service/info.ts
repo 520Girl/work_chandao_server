@@ -83,6 +83,17 @@ export class PostInfoService extends BaseService {
     return [...new Set(teamIds.filter((id) => Number(id) > 0))];
   }
 
+  /** 动态流「可访问团队」ID（成员表 + firstTeamId 兜底），与 `/feed/teams` 一致 */
+  private async getUserPostFeedTeamIds(userId: number): Promise<number[]> {
+    const memberships = await this.teamMemberEntity.findBy({ userId });
+    let teamIds = memberships.map((m) => m.teamId);
+    const user = await this.userInfoEntity.findOneBy({ id: userId });
+    if (user?.firstTeamId && !teamIds.includes(user.firstTeamId)) {
+      teamIds = [...teamIds, user.firstTeamId];
+    }
+    return [...new Set(teamIds.filter((id) => Number(id) > 0))];
+  }
+
   /**
    * 生成带有报告信息的分享图片
    */
@@ -414,13 +425,16 @@ export class PostInfoService extends BaseService {
   }
 
   /**
-   * App 动态流：当前用户自己的动态，按时间倒序
+   * App 动态流：当前用户自己的动态，按时间倒序。
+   * 可选 `teamId`：仅本人发布且归属该团队的动态；须为可访问团队。
+   * 列表项附带 `likeCount`（点赞人数）。
    */
   async feed(
     userId: number,
     page: number = 1,
     size: number = 20,
-    publishStatus: number = 2
+    publishStatus: number = 2,
+    teamId?: number
   ) {
     const qb = this.postInfoEntity
       .createQueryBuilder('a')
@@ -434,24 +448,54 @@ export class PostInfoService extends BaseService {
     } else {
       qb.andWhere('a.status IN (1, 2)');
     }
+
+    const tid = teamId != null && teamId !== undefined ? Number(teamId) : NaN;
+    if (Number.isFinite(tid) && tid > 0) {
+      const allowed = await this.getUserPostFeedTeamIds(userId);
+      if (!allowed.includes(tid)) {
+        throw new CoolCommException('无权查看该团队动态');
+      }
+      qb.andWhere('a.teamId = :feedTeamId', { feedTeamId: tid });
+    }
+
     const total = await qb.getCount();
     const list = await qb
       .skip((page - 1) * size)
       .take(size)
       .getMany();
+    if (list.length > 0) {
+      const postIds = list.map((p) => p.id);
+      const likeRows = await this.postLikeEntity
+        .createQueryBuilder('pl')
+        .select('pl.postId', 'postId')
+        .addSelect('COUNT(1)', 'likeCount')
+        .where('pl.postId IN (:...postIds)', { postIds })
+        .groupBy('pl.postId')
+        .getRawMany();
+      const likeMap = new Map(likeRows.map((r: any) => [Number(r.postId), Number(r.likeCount ?? 0)]));
+      (list as any[]).forEach((p) => {
+        (p as any).likeCount = likeMap.get(p.id) ?? 0;
+      });
+    }
     return { list, pagination: { page, size, total } };
   }
 
   /**
-   * 用户所在团队的动态流：仅 status=2，按时间倒序，按用户所属团队筛选
+   * 用户所在团队的动态流：仅 status=2，按时间倒序。
+   * 未传 `teamId`：用户所属全部团队（含 firstTeamId 不在成员表时的兜底）；
+   * 传 `teamId`：仅该团队，且须为当前用户可访问团队，否则抛错。
    */
-  async feedTeams(userId: number, page: number = 1, size: number = 20) {
-    const memberships = await this.teamMemberEntity.findBy({ userId });
-    let teamIds = memberships.map((m) => m.teamId);
-    const user = await this.userInfoEntity.findOneBy({ id: userId });
-    if (user?.firstTeamId && !teamIds.includes(user.firstTeamId)) {
-      teamIds = [...teamIds, user.firstTeamId];
+  async feedTeams(userId: number, page: number = 1, size: number = 20, teamId?: number) {
+    let teamIds = await this.getUserPostFeedTeamIds(userId);
+
+    const tid = teamId != null && teamId !== undefined ? Number(teamId) : NaN;
+    if (Number.isFinite(tid) && tid > 0) {
+      if (!teamIds.includes(tid)) {
+        throw new CoolCommException('无权查看该团队动态');
+      }
+      teamIds = [tid];
     }
+
     if (teamIds.length === 0) {
       return { list: [], pagination: { page, size, total: 0 } };
     }
@@ -466,6 +510,16 @@ export class PostInfoService extends BaseService {
       .take(size)
       .getMany();
     if (list.length > 0) {
+      const postIds = list.map((p) => p.id);
+      const likeRows = await this.postLikeEntity
+        .createQueryBuilder('pl')
+        .select('pl.postId', 'postId')
+        .addSelect('COUNT(1)', 'likeCount')
+        .where('pl.postId IN (:...postIds)', { postIds })
+        .groupBy('pl.postId')
+        .getRawMany();
+      const likeMap = new Map(likeRows.map((r: any) => [Number(r.postId), Number(r.likeCount ?? 0)]));
+
       const userIds = [...new Set(list.map((p) => p.userId))];
       const users = await this.userInfoEntity
         .createQueryBuilder('u')
@@ -477,6 +531,7 @@ export class PostInfoService extends BaseService {
         const u = userMap.get(p.userId);
         (p as any).nickName = u?.nickName;
         (p as any).avatarUrl = u?.avatarUrl;
+        (p as any).likeCount = likeMap.get(p.id) ?? 0;
       });
     }
     return { list, pagination: { page, size, total } };
