@@ -278,4 +278,71 @@ export class UserWxService extends BaseService {
     const utils = app.getUtils();
     return await utils.decryptSession(sessionKey, iv, encryptedData);
   }
+
+  /**
+   * 小程序服务端 access_token（wxa 接口用）。
+   * 使用官方 `cgi-bin/token` + `client_credential`，从插件读取 appid/secret，避免依赖各版本插件对 getAccessToken 的返回结构。
+   */
+  async getMiniProgramAccessToken(): Promise<string> {
+    const mini: any = await this.getMiniApp();
+    const account = mini.getAccount?.();
+    if (!account?.getAppId || !account?.getSecret) {
+      throw new CoolCommException('微信插件未提供小程序账号配置（appId/secret）');
+    }
+    const appid = account.getAppId();
+    const secret = account.getSecret();
+    const { data } = await axios.get('https://api.weixin.qq.com/cgi-bin/token', {
+      params: {
+        grant_type: 'client_credential',
+        appid,
+        secret,
+      },
+    });
+    if (data?.errcode) {
+      throw new CoolCommException(
+        `获取小程序 access_token 失败: [${data.errcode}] ${data.errmsg || ''}`
+      );
+    }
+    if (!data?.access_token) {
+      throw new CoolCommException('获取小程序 access_token 失败: 响应无 access_token');
+    }
+    return String(data.access_token);
+  }
+
+  /**
+   * 无限量小程序码（PNG），scene 最大 32 字符，仅数字/字母及部分符号
+   * @see https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/qrcode-link/qr-code/getUnlimitedQRCode.html
+   */
+  async getUnlimitedMiniProgramQrCodeBuffer(opts: {
+    scene: string;
+    page: string;
+    envVersion?: 'release' | 'trial' | 'develop';
+    checkPath?: boolean;
+    width?: number;
+  }): Promise<Buffer> {
+    const accessToken = await this.getMiniProgramAccessToken();
+    const res = await axios.post(
+      `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${accessToken}`,
+      {
+        scene: opts.scene,
+        page: opts.page,
+        env_version: opts.envVersion ?? 'release',
+        check_path: opts.checkPath ?? false,
+        width: opts.width ?? 430,
+      },
+      { responseType: 'arraybuffer', validateStatus: () => true }
+    );
+    const ct = String(res.headers['content-type'] || '');
+    if (ct.includes('json') || ct.includes('text')) {
+      let msg = '生成小程序码失败';
+      try {
+        const j = JSON.parse(Buffer.from(res.data).toString('utf8'));
+        if (j.errmsg) msg = `${msg}: [${j.errcode}] ${j.errmsg}`;
+      } catch {
+        /* ignore */
+      }
+      throw new CoolCommException(msg);
+    }
+    return Buffer.from(res.data);
+  }
 }

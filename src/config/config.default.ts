@@ -5,6 +5,19 @@ import * as path from 'path';
 import { pCachePath, pUploadPath } from '../comm/path';
 import { availablePort } from '../comm/port';
 
+/** 团队邀请小程序码 getwxacodeunlimit：release | trial | develop */
+function readTeamInviteMiniEnvVersion(): 'release' | 'trial' | 'develop' {
+  const v = String(process.env.TEAM_INVITE_MINI_ENV_VERSION || '').toLowerCase();
+  if (v === 'trial' || v === 'develop') return v;
+  return 'release';
+}
+
+/** TEAM_INVITE_MINI_CHECK_PATH=1/true/yes 时为 true */
+function readTeamInviteMiniCheckPath(): boolean {
+  const s = String(process.env.TEAM_INVITE_MINI_CHECK_PATH || '').toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes';
+}
+
 // redis缓存
 // import { redisStore } from 'cache-manager-ioredis-yet';
 
@@ -104,5 +117,15 @@ export default {
       key: '',
     },
     cacheTtlSeconds: 86400,
+  },
+  /**
+   * 团队邀请小程序码（与 `config.local` / `config.prod` 合并后按环境切换）
+   * 环境变量（可选，未设置则用下方默认值，可被 local/prod 覆盖）：
+   * - TEAM_INVITE_MINI_ENV_VERSION：release | trial | develop
+   * - TEAM_INVITE_MINI_CHECK_PATH：1 / true / yes 表示校验 page 已发布
+   * - TEAM_INVITE_MINI_PAGE：未配置系统参数时的落地页 path（不要前导 /）
+   */
+  team: {
+    inviteMiniPage: 'pages/team/invite',
   },
 } as MidwayConfig;

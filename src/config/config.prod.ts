@@ -35,6 +35,11 @@ export default {
   upload: {
     domain: 'https://jingzuoguanzhao.cn', // 如 https://api.xxx.com
   },
+  /** 生产：正式版 + 校验 page（若需体验版可改此处或仅用环境变量） */
+  team: {
+    inviteMiniEnvVersion: 'release' as const,
+    inviteMiniCheckPath: true,
+  },
   cool: {
     // 实体与路径，跟生成代码、前端请求、swagger文档相关 注意：线上不建议开启，以免暴露敏感信息
     eps: false,

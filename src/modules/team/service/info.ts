@@ -11,6 +11,7 @@ import { TeamInfoEntity } from '../entity/info';
 import { TeamMemberEntity } from '../entity/member';
 import { UserInfoEntity } from '../../user/entity/info';
 import { TeamMemberService } from './member';
+import { TeamThresholdService } from './threshold';
 
 /**
  * 团队信息服务
@@ -31,6 +32,9 @@ export class TeamInfoService extends BaseService {
 
   @Inject()
   teamMemberService: TeamMemberService;
+
+  @Inject()
+  teamThresholdService: TeamThresholdService;
 
   @Init()
   async init() {
@@ -53,7 +57,7 @@ export class TeamInfoService extends BaseService {
   async syncTypeAndEmit(teamId: number) {
     const team = await this.teamInfoEntity.findOneBy({ id: teamId });
     if (team) {
-      const newType = this.calcTypeByMemberCount(team.memberCount);
+      const newType = await this.calcTypeByMemberCount(team.memberCount);
       if (team.type !== newType) {
         await this.teamInfoEntity.update(teamId, { type: newType });
       }
@@ -62,13 +66,14 @@ export class TeamInfoService extends BaseService {
   }
 
   /**
-   * 根据成员数计算团队类型：小组(3,10]、营级[10,100)、团级[100,+∞)
+   * 根据成员数计算团队类型（阈值来自字典 team_threshold）
    */
-  private calcTypeByMemberCount(count: number): number {
-    if (count >= 100) return 3; // 团级
-    if (count >= 10) return 2; // 营级
-    if (count > 3) return 1; // 小组
-    return 0; // 未知
+  private async calcTypeByMemberCount(count: number): Promise<number> {
+    const th = await this.teamThresholdService.getAll();
+    if (count >= th.team_regiment_min) return 3;
+    if (count >= th.team_camp_min) return 2;
+    if (count >= th.team_group_min) return 1;
+    return 0;
   }
 
   /**
@@ -78,7 +83,7 @@ export class TeamInfoService extends BaseService {
     const team = await this.teamInfoEntity.findOneBy({ id: teamId });
     if (team) {
       const newCount = Math.max(0, team.memberCount + count);
-      const newType = this.calcTypeByMemberCount(newCount);
+      const newType = await this.calcTypeByMemberCount(newCount);
       await this.teamInfoEntity.update(teamId, {
         memberCount: newCount,
         type: newType,

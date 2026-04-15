@@ -2,7 +2,12 @@ import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { TeamInviteService } from '../../../team/service/invite';
 import { TeamMemberService } from '../../../team/service/member';
-import { UserJoinByInviteDTO, UserQuitTeamDTO } from '../../dto/team';
+import {
+  UserJoinByInviteDTO,
+  UserQuitTeamDTO,
+  UserCreateTeamInviteDTO,
+  UserCreatePersonalInviteDTO,
+} from '../../dto/team';
 import { Validate } from '@midwayjs/validate';
 
 /**
@@ -26,6 +31,37 @@ export class AppUserTeamController extends BaseController {
   @Validate()
   async joinByInvite(@Body() body: UserJoinByInviteDTO) {
     return this.ok(await this.teamInviteService.joinByInvite(this.ctx.user.id, body.code));
+  }
+
+  @Post('/createTeamInvite', { summary: '负责人创建团队邀请（加入已有团队）' })
+  @Validate()
+  async createTeamInvite(@Body() body: UserCreateTeamInviteDTO) {
+    const result = await this.teamInviteService.createTeamInviteForApp(
+      this.ctx.user.id,
+      body.teamId,
+      body.days ?? 7,
+      body.bindUserId ?? null
+    );
+    const finished = await this.teamInviteService.finishCreateInviteWithOptionalQr(result);
+    return this.ok({
+      ...finished,
+      url: `/invite?code=${finished.code}`,
+    });
+  }
+
+  @Post('/createPersonalInvite', { summary: '创建个人成团邀请（人满自动建团）' })
+  @Validate()
+  async createPersonalInvite(@Body() body: UserCreatePersonalInviteDTO) {
+    const result = await this.teamInviteService.createPersonalInviteForApp(
+      this.ctx.user.id,
+      body.days ?? 7,
+      body.bindUserId ?? null
+    );
+    const finished = await this.teamInviteService.finishCreateInviteWithOptionalQr(result);
+    return this.ok({
+      ...finished,
+      url: `/invite?code=${finished.code}`,
+    });
   }
 
   @Post('/quitTeam', { summary: '主动退出团队' })

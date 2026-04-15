@@ -22,3 +22,24 @@ export class UserQuitTeamDTO {
   @Rule(RuleType.number().required())
   teamId: number;
 }
+
+/** 负责人创建「加入已有团队」邀请 */
+export class UserCreateTeamInviteDTO {
+  @Rule(RuleType.number().required())
+  teamId: number;
+
+  @Rule(RuleType.number().optional().default(7).min(1).max(365))
+  days?: number;
+
+  @Rule(RuleType.number().optional().allow(null))
+  bindUserId?: number | null;
+}
+
+/** 创建「个人成团」邀请（发起人为当前用户） */
+export class UserCreatePersonalInviteDTO {
+  @Rule(RuleType.number().optional().default(7).min(1).max(365))
+  days?: number;
+
+  @Rule(RuleType.number().optional().allow(null))
+  bindUserId?: number | null;
+}

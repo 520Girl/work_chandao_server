@@ -33,6 +33,11 @@ export default {
   upload: {
     domain: 'http://127.0.0.1:8001',
   },
+  /** 本地开发：默认体验版 + 不校验 page，避免未发版无法生成码（仍可用环境变量覆盖） */
+  team: {
+    inviteMiniEnvVersion: 'trial' as const,
+    inviteMiniCheckPath: false,
+  },
   cool: {
     // 实体与路径，跟生成代码、前端请求、swagger文档相关 注意：线上不建议开启，以免暴露敏感信息
     eps: true,

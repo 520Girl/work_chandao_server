@@ -3,7 +3,7 @@ import { CoolController, BaseController } from '@cool-midway/core';
 import { TeamInviteEntity } from '../../entity/invite';
 import { TeamInfoEntity } from '../../entity/info';
 import { BaseSysUserEntity } from '../../../base/entity/sys/user';
-import { TeamInviteService } from '../../service/invite';
+import { TeamInviteService, TEAM_INVITE_MODE_PERSONAL } from '../../service/invite';
 import { Context } from '@midwayjs/koa';
 import { InjectEntityModel } from '@midwayjs/typeorm';
 import { Repository } from 'typeorm';
@@ -18,13 +18,14 @@ import { UserInfoEntity } from '../../../user/entity/info';
   entity: TeamInviteEntity,
   pageQueryOp: {
     keyWordLikeFields: ['a.code'],
-    fieldEq: ['a.teamId', 'a.status', 'a.creatorId'],
+    fieldEq: ['a.teamId', 'a.status', 'a.creatorId', 'a.inviteMode', 'a.sponsorUserId'],
     select: ['a.*', 'b.name as teamName', 'c.nickName as creatorName'],
     join: [
       {
         entity: TeamInfoEntity,
         alias: 'b',
         condition: 'a.teamId = b.id',
+        type: 'leftJoin',
       },
       {
         entity: BaseSysUserEntity,
@@ -45,21 +46,56 @@ export class AdminTeamInviteController extends BaseController {
   @InjectEntityModel(TeamInviteJoinEntity)
   teamInviteJoinEntity: Repository<TeamInviteJoinEntity>;
 
-  /** 创建人 = 当前登录的管理员 (ctx.admin.userId，即 base_sys_user.id) */
+  /**
+   * 创建邀请：团队邀请 inviteMode=0（默认）需 teamId；
+   * 个人成团 inviteMode=1 需 sponsorUserId（发起人 user_info.id），可选 bindUserId。
+   */
   @Post('/createInvite', { summary: '创建邀请链接' })
   async createInvite(
+    @Body('inviteMode') inviteMode: number = 0,
     @Body('teamId') teamId: number,
+    @Body('sponsorUserId') sponsorUserId: number,
+    @Body('bindUserId') bindUserId: number,
     @Body('days') days: number = 7
   ) {
-    const creatorId = this.ctx.admin?.userId;
-    const result = await this.teamInviteService.genInviteCode(
-      teamId,
-      creatorId || 0,
-      days
-    );
+    const creatorId = this.ctx.admin?.userId || 0;
+    const d = Number(days) > 0 ? Number(days) : 7;
+    let result: { id: number; code: string; expireTime: Date };
+    if (Number(inviteMode) === TEAM_INVITE_MODE_PERSONAL) {
+      if (!sponsorUserId) {
+        return this.fail('个人成团需传 sponsorUserId（发起人用户 ID）');
+      }
+      result = await this.teamInviteService.createInviteRecord({
+        inviteMode: TEAM_INVITE_MODE_PERSONAL,
+        teamId: null,
+        creatorId,
+        creatorAppUserId: null,
+        sponsorUserId: Number(sponsorUserId),
+        bindUserId: bindUserId != null ? Number(bindUserId) : null,
+        days: d,
+      });
+    } else {
+      if (!teamId) {
+        return this.fail('请选择团队');
+      }
+      result = await this.teamInviteService.createInviteRecord({
+        inviteMode: 0,
+        teamId: Number(teamId),
+        creatorId,
+        creatorAppUserId: null,
+        sponsorUserId: null,
+        bindUserId: bindUserId != null ? Number(bindUserId) : null,
+        days: d,
+      });
+    }
+    const finished = await this.teamInviteService.finishCreateInviteWithOptionalQr(result);
+    const code = finished.code;
+    if (!finished.miniProgramQrUrl) {
+      this.ctx.logger?.warn?.(`[createInvite] 小程序码未生成 code=${code}`);
+    }
     return this.ok({
-      ...result,
-      url: `/invite?code=${(result as any).code}`,
+      ...finished,
+      url: `/invite?code=${code}`,
     });
   }
 

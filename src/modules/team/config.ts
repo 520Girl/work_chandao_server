@@ -15,5 +15,6 @@ export default () => {
     globalMiddlewares: [],
     // 模块加载顺序，默认为0，值越大越优先加载
     order: 0,
+    // 邀请小程序码 page / env_version / check_path 已迁至根配置 src/config（team），按 config.local / config.prod 与环境变量切换
   } as ModuleConfig;
 };

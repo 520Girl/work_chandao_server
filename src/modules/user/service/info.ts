@@ -16,6 +16,7 @@ import { TeamMemberService } from '../../team/service/member';
 import { PostInfoEntity } from '../../post/entity/info';
 import { UserWxEntity } from '../entity/wx';
 import { GeoService } from '../../base/service/geo';
+import { TeamThresholdService } from '../../team/service/threshold';
 
 /**
  * 用户信息服务
@@ -48,6 +49,9 @@ export class UserInfoService extends BaseService {
 
   @Inject()
   geoService: GeoService;
+
+  @Inject()
+  teamThresholdService: TeamThresholdService;
 
   @Init()
   async init() {
@@ -148,12 +152,13 @@ export class UserInfoService extends BaseService {
     const user = await this.userInfoEntity.findOneBy({ id: userId });
     if (!user || user.isManualRole === 1) return;
 
+    const th = await this.teamThresholdService.getAll();
     let newRole = user.role;
-    if (memberCount >= 101) {
+    if (memberCount >= th.role_regiment_min) {
       newRole = UserRole.TEAM_ADMIN; // 团长
-    } else if (memberCount >= 11) {
+    } else if (memberCount >= th.role_camp_min) {
       newRole = UserRole.CAMP_ADMIN; // 营长
-    } else if (memberCount >= 3) {
+    } else if (memberCount >= th.role_group_min) {
       newRole = UserRole.GROUP_LEADER; // 组长
     }
 
