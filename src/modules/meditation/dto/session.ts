@@ -146,12 +146,20 @@ export interface MeditationReportStatisticsResponse {
       data: number[];
     }[];
   };
-  /** 8 条线：心率/呼吸率/体动/时长 ×（上一周期、当前周期），data 均为 7 桶，数值保留两位小数 */
+  /** 四组折线图数据：心率 / 呼吸率 / 体动 / 时长；每组 2 条线（上一周期、当前周期），与 categories 对齐 */
   compareChartData: {
     categories: string[];
-    series: {
-      name: string;
-      data: number[];
-    }[];
+    heartRate: MeditationCompareChartBlock;
+    breathRate: MeditationCompareChartBlock;
+    movement: MeditationCompareChartBlock;
+    duration: MeditationCompareChartBlock;
   };
+}
+
+/** 单个对比折线图：固定 2 条 series（上一周期、当前周期） */
+export interface MeditationCompareChartBlock {
+  series: {
+    name: string;
+    data: number[];
+  }[];
 }

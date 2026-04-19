@@ -649,18 +649,31 @@ export class MeditationSessionService extends BaseService {
       ],
     };
 
-    const compareChartData = {
-      categories: currentBuckets.map(b => b.label),
+    const categories = currentBuckets.map(b => b.label);
+    const pair = (
+      label: string,
+      prevField: 'avgHeartRate' | 'avgBreathRate' | 'movementCount' | 'totalDurationMinutes',
+      currField: 'avgHeartRate' | 'avgBreathRate' | 'movementCount' | 'totalDurationMinutes'
+    ) => ({
       series: [
-        { name: `心率（${previousName}）`, data: previousBuckets.map(b => this.round2(b.avgHeartRate)) },
-        { name: `心率（${currentName}）`, data: currentBuckets.map(b => this.round2(b.avgHeartRate)) },
-        { name: `呼吸率（${previousName}）`, data: previousBuckets.map(b => this.round2(b.avgBreathRate)) },
-        { name: `呼吸率（${currentName}）`, data: currentBuckets.map(b => this.round2(b.avgBreathRate)) },
-        { name: `体动（${previousName}）`, data: previousBuckets.map(b => this.round2(b.movementCount)) },
-        { name: `体动（${currentName}）`, data: currentBuckets.map(b => this.round2(b.movementCount)) },
-        { name: `时长（${previousName}）`, data: previousBuckets.map(b => this.round2(b.totalDurationMinutes)) },
-        { name: `时长（${currentName}）`, data: currentBuckets.map(b => this.round2(b.totalDurationMinutes)) },
+        {
+          name: `${label}（${previousName}）`,
+          data: previousBuckets.map(b => this.round2(b[prevField])),
+        },
+        {
+          name: `${label}（${currentName}）`,
+          data: currentBuckets.map(b => this.round2(b[currField])),
+        },
       ],
+    });
+
+    const compareChartData = {
+      categories,
+      /** 四个独立折线图：各含上一周期 + 当前周期两条线（各 7 桶，与 categories 对齐） */
+      heartRate: pair('心率', 'avgHeartRate', 'avgHeartRate'),
+      breathRate: pair('呼吸率', 'avgBreathRate', 'avgBreathRate'),
+      movement: pair('体动', 'movementCount', 'movementCount'),
+      duration: pair('时长', 'totalDurationMinutes', 'totalDurationMinutes'),
     };
 
     return {
