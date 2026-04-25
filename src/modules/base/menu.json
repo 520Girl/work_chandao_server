@@ -829,6 +829,18 @@
                         "keepAlive": false,
                         "isShow": true,
                         "childMenus": []
+                    },
+                    {
+                        "name": "冥想累计补偿",
+                        "router": null,
+                        "perms": "user:info:setMeditationPracticeOffsets",
+                        "type": 2,
+                        "icon": null,
+                        "orderNum": 7,
+                        "viewPath": null,
+                        "keepAlive": false,
+                        "isShow": true,
+                        "childMenus": []
                     }
                 ]
             },

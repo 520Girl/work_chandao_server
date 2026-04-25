@@ -9,12 +9,9 @@ export class LeaderboardScoreQueryDTO {
   @Rule(RuleType.string().default('week'))
   range?: string;
 
-  /**
-   * 团队ID；不传表示全站榜
-   * @example 1
-   */
-  @Rule(RuleType.number())
-  teamId?: number;
+  /** 不传或 null：全站；正整数：该团队在职成员 */
+  @Rule(RuleType.number().optional().allow(null))
+  teamId?: number | null;
 
   /**
    * 页码

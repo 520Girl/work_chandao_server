@@ -2,7 +2,7 @@ import { Body, Inject, Post, Get, Query } from '@midwayjs/core';
 import { BaseController, CoolController } from '@cool-midway/core';
 import { DeviceInfoService } from '../../service/info';
 import { DeviceBindDTO, DeviceUnbindDTO } from '../../dto/info';
-import { DeviceMacDTO, DeviceSetWarningSettingAppDTO } from '../../dto/app';
+import { DeviceMacDTO, DeviceSetWarningSettingAppDTO, DeviceSortSnListDTO } from '../../dto/app';
 import { Validate } from '@midwayjs/validate';
 
 /**
@@ -35,9 +35,23 @@ export class AppDeviceInfoController extends BaseController {
     return this.ok();
   }
 
-  @Get('/list', { summary: '设备列表' })
+  @Get('/list', { summary: '设备列表（按 sortOrder 升序，首条为主设备）' })
   async list() {
     return this.ok(await this.deviceInfoService.listByUser(this.ctx.user.id));
+  }
+
+  @Get('/primary', { summary: '主设备 SN（sortOrder 最小；无设备为 null）' })
+  async primary() {
+    const sn = await this.deviceInfoService.getPrimaryDeviceSn(this.ctx.user.id);
+    return this.ok({ sn });
+  }
+
+  @Post('/sort', { summary: '重排设备顺序（order[0] 为主设备）' })
+  @Validate()
+  async sort(@Body() body: DeviceSortSnListDTO) {
+    return this.ok(
+      await this.deviceInfoService.reorderDevicesForUser(this.ctx.user.id, body.order)
+    );
   }
 
   @Get('/info', { summary: '设备信息' })
@@ -71,10 +85,11 @@ export class AppDeviceInfoController extends BaseController {
     });
   }
 
-  @Post('/realtime', { summary: '设备实时数据' })
+  @Post('/realtime', { summary: '设备实时数据（先同步云端状态再拉取 SOAP 实时数据）' })
   @Validate()
   async realtime(@Body() body: DeviceMacDTO) {
     const device = await this.deviceInfoService.getUserDeviceByMac(this.ctx.user.id, body.mac);
+    await this.deviceInfoService.refreshDeviceStatusFromCloud(device.mac);
     return this.ok(await this.deviceInfoService.getDeviceRealtimeData(device.mac));
   }
 

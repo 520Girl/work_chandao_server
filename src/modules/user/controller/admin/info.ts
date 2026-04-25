@@ -5,8 +5,10 @@ import { TeamInfoEntity } from '../../../team/entity/info';
 import { UserMedalEntity } from '../../../medal/entity/user_medal';
 import { MedalTemplateEntity } from '../../../medal/entity/template';
 import { Inject, Post, Body } from '@midwayjs/core';
+import { Validate } from '@midwayjs/validate';
 import { MedalAwardService } from '../../../medal/service/award';
 import { UserInfoService } from '../../service/info';
+import { UserSetMeditationPracticeOffsetsDTO } from '../../dto/admin';
 
 /**
  * 用户管理
@@ -59,5 +61,12 @@ export class AdminUserInfoController extends BaseController {
     if (!userId) throw new CoolCommException('缺少 userId');
     const stats = await this.userInfoService.userDetailStats(Number(userId));
     return this.ok(stats);
+  }
+
+  @Post('/setMeditationPracticeOffsets', { summary: '设置用户冥想累计补偿(秒/天)' })
+  @Validate()
+  async setMeditationPracticeOffsets(@Body() body: UserSetMeditationPracticeOffsetsDTO) {
+    const preview = await this.userInfoService.setMeditationPracticeOffsets(body);
+    return this.ok(preview);
   }
 }

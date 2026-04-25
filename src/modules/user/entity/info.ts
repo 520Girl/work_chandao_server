@@ -53,4 +53,14 @@ export class UserInfoEntity extends BaseEntity {
 
   @Column({ comment: '最近位置更新时间', nullable: true })
   lastLocationTime: Date;
+
+  @Column({
+    comment: '冥想累计时长补偿(秒)，与站内报告 totalDuration 之和',
+    unsigned: true,
+    default: 0,
+  })
+  meditationExtraSeconds: number;
+
+  @Column({ comment: '冥想累计有练习天数补偿(天)，与站内已完成会话去重日期数之和', default: 0 })
+  meditationExtraDays: number;
 }

@@ -1,5 +1,16 @@
 import { Rule, RuleType } from '@midwayjs/validate';
 
+/** 按 SN 顺序重排当前用户设备；数组下标 0 为「主设备」 */
+export class DeviceSortSnListDTO {
+  @Rule(
+    RuleType.array()
+      .items(RuleType.string().required())
+      .required()
+      .min(1)
+  )
+  order: string[];
+}
+
 export class DeviceMacDTO {
   @Rule(RuleType.string().required())
   mac: string;

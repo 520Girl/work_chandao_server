@@ -42,6 +42,18 @@ export class LeaderboardScoreService extends BaseService {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  /** 仅正整数为团队内排行；不传 / null / 0 / 非法值均为全站（与时长榜一致） */
+  private parseTeamId(raw: any): number | null {
+    if (raw === undefined || raw === null || raw === '') {
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+      return null;
+    }
+    return Math.floor(n);
+  }
+
   private rangeStart(range: string) {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -61,7 +73,7 @@ export class LeaderboardScoreService extends BaseService {
     const page = Math.max(Number(params?.page ?? 1), 1);
     const size = Math.min(Math.max(Number(params?.size ?? 20), 1), 100);
     const range = String(params?.range ?? 'week');
-    const teamId = params?.teamId != null ? Number(params.teamId) : null;
+    const teamId = this.parseTeamId(params?.teamId);
 
     const start = this.rangeStart(range);
     const end = new Date();

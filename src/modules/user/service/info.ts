@@ -17,6 +17,7 @@ import { PostInfoEntity } from '../../post/entity/info';
 import { UserWxEntity } from '../entity/wx';
 import { GeoService } from '../../base/service/geo';
 import { TeamThresholdService } from '../../team/service/threshold';
+import { MeditationSessionService } from '../../meditation/service/session';
 
 /**
  * 用户信息服务
@@ -52,6 +53,9 @@ export class UserInfoService extends BaseService {
 
   @Inject()
   teamThresholdService: TeamThresholdService;
+
+  @Inject()
+  meditationSessionService: MeditationSessionService;
 
   @Init()
   async init() {
@@ -117,6 +121,8 @@ export class UserInfoService extends BaseService {
     // 禁止前端传参
     delete param.isManualRole;
     delete param.unionid; // 登录唯一ID由登录时生成，不可手动修改
+    delete param.meditationExtraSeconds;
+    delete param.meditationExtraDays;
 
     // 如果提供了密码，进行 md5 加密
     if (param.password) {
@@ -194,10 +200,11 @@ export class UserInfoService extends BaseService {
       .innerJoin(TeamInfoEntity, 't', 'i.teamId = t.id')
       .where('t.ownerId = :userId', { userId })
       .getCount();
-    const [teamCount, postCount, inviteJoinedCount] = await Promise.all([
+    const [teamCount, postCount, inviteJoinedCount, meditationPractice] = await Promise.all([
       this.teamMemberEntity.count({ where: { userId, exitType: 0 } }),
       postRepo.count({ where: { userId } }),
       inviteJoinRepo.count({ where: { userId } }),
+      this.meditationSessionService.getMeditationCumulativePreview(userId),
     ]);
     return {
       teamCount,
@@ -205,7 +212,45 @@ export class UserInfoService extends BaseService {
       inviteCreatedCount,
       inviteJoinedCount,
       inviter: inviter ? { id: inviter.id, nickName: inviter.nickName, phone: inviter.phone, avatarUrl: inviter.avatarUrl } : null,
+      meditationPractice,
     };
+  }
+
+  /**
+   * 后台：设置用户冥想累计补偿（秒、天），写入 user_info
+   */
+  async setMeditationPracticeOffsets(data: {
+    userId: number;
+    meditationExtraSeconds?: number;
+    meditationExtraDays?: number;
+  }) {
+    if (
+      data.meditationExtraSeconds === undefined &&
+      data.meditationExtraDays === undefined
+    ) {
+      throw new CoolCommException('请至少填写 meditationExtraSeconds 或 meditationExtraDays 之一');
+    }
+    const userId = Math.floor(Number(data.userId));
+    if (!userId) throw new CoolCommException('userId 不合法');
+    const user = await this.userInfoEntity.findOneBy({ id: userId });
+    if (!user) throw new CoolCommException('用户不存在');
+    const patch: any = {};
+    if (data.meditationExtraSeconds !== undefined) {
+      const n = Math.floor(Number(data.meditationExtraSeconds));
+      if (!Number.isFinite(n) || n < 0 || n > 2147483647) {
+        throw new CoolCommException('meditationExtraSeconds 须为 0～2147483647 的整数');
+      }
+      patch.meditationExtraSeconds = n;
+    }
+    if (data.meditationExtraDays !== undefined) {
+      const n = Math.floor(Number(data.meditationExtraDays));
+      if (!Number.isFinite(n) || n < 0 || n > 36500) {
+        throw new CoolCommException('meditationExtraDays 须为 0～36500 的整数');
+      }
+      patch.meditationExtraDays = n;
+    }
+    await this.userInfoEntity.update(userId, patch);
+    return this.meditationSessionService.getMeditationCumulativePreview(userId);
   }
 
   /**

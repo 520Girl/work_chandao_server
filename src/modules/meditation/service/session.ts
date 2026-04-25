@@ -13,6 +13,7 @@ import { DeviceInfoService } from '../../device/service/info';
 import { BaseSysParamService } from '../../base/service/sys/param';
 import * as zlib from 'zlib';
 import { DictInfoService } from '../../dict/service/info';
+import { UserInfoEntity } from '../../user/entity/info';
 
 /**
  * 冥想会话服务
@@ -31,6 +32,9 @@ export class MeditationSessionService extends BaseService {
   @InjectEntityModel(MeditationDataEntity)
   meditationDataEntity: Repository<MeditationDataEntity>;
 
+  @InjectEntityModel(UserInfoEntity)
+  userInfoEntity: Repository<UserInfoEntity>;
+
   @Inject()
   coolEventManager: CoolEventManager;
 
@@ -44,14 +48,50 @@ export class MeditationSessionService extends BaseService {
   dictInfoService: DictInfoService;
 
   /**
+   * 当前用户是否有进行中的冥想（status=1）
+   */
+  async getActiveSession(userId: number) {
+    const session = await this.meditationSessionEntity.findOneBy({
+      userId,
+      status: 1,
+    });
+    if (!session) {
+      return { hasActive: false, session: null };
+    }
+    const pollInterval =
+      (await this.baseSysParamService.dataByKey('DEVICE_REALTIME_SYNC_INTERVAL')) || 3000;
+    return {
+      hasActive: true,
+      session: {
+        id: session.id,
+        sessionId: session.id,
+        sn: session.sn,
+        type: session.type,
+        startDate: session.startDate,
+        targetDuration: session.targetDuration,
+        lastActiveTime: session.lastActiveTime,
+      },
+      pollInterval,
+    };
+  }
+
+  /**
    * 开始冥想
    */
   async start(userId: number, sn?: string, targetDuration?: number, type?: number) {
-    const sessionType = type || (sn ? 1 : 2);
+    let sessionType = type != null ? Number(type) : sn ? 1 : 2;
+    if (sessionType !== 1 && sessionType !== 2) {
+      sessionType = sn ? 1 : 2;
+    }
     if (sessionType === 1) {
-      if (!sn) {
-        throw new CoolCommException('设备SN不能为空');
+      let resolvedSn = sn ? String(sn).trim() : '';
+      if (!resolvedSn) {
+        resolvedSn = (await this.deviceInfoService.getPrimaryDeviceSn(userId)) || '';
       }
+      if (!resolvedSn) {
+        throw new CoolCommException('设备SN不能为空或未绑定设备');
+      }
+      sn = resolvedSn;
       const device = await this.deviceInfoEntity.findOneBy({ sn, userId });
       if (!device) {
         throw new CoolCommException('设备未绑定');
@@ -281,7 +321,10 @@ export class MeditationSessionService extends BaseService {
     };
   }
 
-  private async calcUserTotals(userId: number, endDate: Date) {
+  /**
+   * 站内原始汇总（不含 user_info 补偿）
+   */
+  private async getPracticeRawTotals(userId: number) {
     const reports: any[] = await this.meditationReportEntity
       .createQueryBuilder('r')
       .leftJoin(MeditationSessionEntity, 's', 'r.sessionId = s.id')
@@ -290,7 +333,6 @@ export class MeditationSessionService extends BaseService {
       .getRawMany();
     const totalSecondsRaw =
       (reports ?? []).reduce((sum, item) => sum + (Number(item?.totalDuration ?? 0) || 0), 0) || 0;
-    const totalHours = Number((totalSecondsRaw / 3600).toFixed(2));
 
     const sessions = await this.meditationSessionEntity.find({
       where: { userId, status: 2 },
@@ -303,14 +345,52 @@ export class MeditationSessionService extends BaseService {
       if (!s?.startDate) continue;
       days.add(s.startDate.toISOString().slice(0, 10));
     }
-    const totalDays = days.size;
+    return { totalSecondsRaw, distinctDayCount: days.size, days, sessions };
+  }
+
+  /**
+   * 后台展示：站内原始 vs 含补偿后的累计天/小时（连续天仍仅按站内会话）
+   */
+  async getMeditationCumulativePreview(userId: number) {
+    const raw = await this.getPracticeRawTotals(userId);
+    const u = await this.userInfoEntity.findOne({
+      where: { id: userId },
+      select: ['meditationExtraSeconds', 'meditationExtraDays'],
+    });
+    const extraSec = Math.max(0, Math.floor(Number(u?.meditationExtraSeconds ?? 0) || 0));
+    const extraDays = Math.max(0, Math.floor(Number(u?.meditationExtraDays ?? 0) || 0));
+    const mergedSeconds = raw.totalSecondsRaw + extraSec;
+    const rawHours = Number((raw.totalSecondsRaw / 3600).toFixed(2));
+    const effectiveHours = Number((mergedSeconds / 3600).toFixed(2));
+    return {
+      meditationExtraSeconds: extraSec,
+      meditationExtraDays: extraDays,
+      rawTotalSeconds: raw.totalSecondsRaw,
+      rawTotalDays: raw.distinctDayCount,
+      rawTotalHours: rawHours,
+      effectiveTotalDays: raw.distinctDayCount + extraDays,
+      effectiveTotalHours: effectiveHours,
+    };
+  }
+
+  private async calcUserTotals(userId: number, endDate: Date) {
+    const raw = await this.getPracticeRawTotals(userId);
+    const u = await this.userInfoEntity.findOne({
+      where: { id: userId },
+      select: ['meditationExtraSeconds', 'meditationExtraDays'],
+    });
+    const extraSec = Math.max(0, Math.floor(Number(u?.meditationExtraSeconds ?? 0) || 0));
+    const extraDays = Math.max(0, Math.floor(Number(u?.meditationExtraDays ?? 0) || 0));
+    const mergedSeconds = raw.totalSecondsRaw + extraSec;
+    const totalHours = Number((mergedSeconds / 3600).toFixed(2));
+    const totalDays = raw.distinctDayCount + extraDays;
 
     const endDay = endDate.toISOString().slice(0, 10);
     let consecutiveDays = 0;
     let cur = new Date(endDay);
     while (true) {
       const d = cur.toISOString().slice(0, 10);
-      if (!days.has(d)) break;
+      if (!raw.days.has(d)) break;
       consecutiveDays++;
       cur.setDate(cur.getDate() - 1);
       if (consecutiveDays > 3650) break;

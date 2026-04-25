@@ -1,7 +1,7 @@
 import { Inject, Provide } from '@midwayjs/core';
 import { BaseService, CoolCommException } from '@cool-midway/core';
 import { InjectEntityModel } from '@midwayjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { TeamMemberEntity } from '../entity/member';
 import { TeamInfoEntity } from '../entity/info';
 import { UserInfoEntity } from '../../user/entity/info';
@@ -27,6 +27,61 @@ export class TeamMemberService extends BaseService {
 
   @Inject()
   messageInfoService: MessageInfoService;
+
+  private async nextTeamMemberSortOrder(manager: EntityManager, userId: number): Promise<number> {
+    const row = await manager
+      .createQueryBuilder(TeamMemberEntity, 'm')
+      .innerJoin(TeamInfoEntity, 't', 't.id = m.teamId')
+      .select('COALESCE(MAX(m.sortOrder), -1)', 'mx')
+      .where('m.userId = :userId AND m.exitType = 0', { userId })
+      .getRawOne();
+    return Number(row?.mx ?? -1) + 1;
+  }
+
+  /**
+   * 当前用户在职团队自定义排序（teamIds 顺序即展示顺序）
+   */
+  async reorderMyTeams(userId: number, teamIds: number[]) {
+    if (!Array.isArray(teamIds) || teamIds.length === 0) {
+      throw new CoolCommException('请传入团队 ID 顺序列表');
+    }
+    // 与 myTeams 一致：仅 team_info 仍存在的在职成员（排除团队已删但 team_member 未清的孤儿行）
+    const activeRows = await this.teamMemberEntity
+      .createQueryBuilder('a')
+      .innerJoin(TeamInfoEntity, 'b', 'a.teamId = b.id')
+      .where('a.userId = :userId', { userId })
+      .andWhere('a.exitType = 0')
+      .select(['a.id', 'a.teamId'])
+      .getMany();
+
+    const activeIds = [...new Set(activeRows.map(a => a.teamId))].sort((a, b) => a - b);
+    const passedNums = teamIds.map(Number);
+    if (passedNums.some(id => !Number.isFinite(id) || id <= 0)) {
+      throw new CoolCommException('团队 ID 不合法');
+    }
+    if (new Set(passedNums).size !== teamIds.length) {
+      throw new CoolCommException('团队 ID 重复');
+    }
+    const passedSorted = [...new Set(passedNums)].sort((a, b) => a - b);
+    if (activeIds.length !== passedSorted.length) {
+      throw new CoolCommException('teamIds 数量须等于当前有效在职团队数（与「我的团队」列表一致）');
+    }
+    for (let i = 0; i < activeIds.length; i++) {
+      if (activeIds[i] !== passedSorted[i]) {
+        throw new CoolCommException('teamIds 须包含当前全部有效在职团队，不可遗漏或多余');
+      }
+    }
+    const activeByTeamId = new Map(activeRows.map(r => [r.teamId, r.id]));
+    for (let i = 0; i < teamIds.length; i++) {
+      const teamId = Number(teamIds[i]);
+      const memberId = activeByTeamId.get(teamId);
+      if (memberId == null) {
+        throw new CoolCommException(`您不在该团队中: ${teamId}`);
+      }
+      await this.teamMemberEntity.update(memberId, { sortOrder: i });
+    }
+    return this.myTeams(userId, 0);
+  }
 
   /**
    * 加入团队 (Transactional)
@@ -56,6 +111,7 @@ export class TeamMemberService extends BaseService {
           joinedAt: new Date(),
           leftAt: null,
           operatorId: null,
+          sortOrder: await this.nextTeamMemberSortOrder(manager, userId),
         });
       } else {
         if (Number(team.maxMemberCount) > 0 && Number(team.memberCount) >= Number(team.maxMemberCount)) {
@@ -68,6 +124,7 @@ export class TeamMemberService extends BaseService {
           teamId,
           joinedAt: new Date(),
           exitType: 0,
+          sortOrder: await this.nextTeamMemberSortOrder(manager, userId),
         });
       }
 
@@ -180,6 +237,7 @@ export class TeamMemberService extends BaseService {
       .addSelect('a.leftAt', 'leftAt')
       .addSelect('a.exitType', 'exitType')
       .addSelect('a.operatorId', 'operatorId')
+      .addSelect('a.sortOrder', 'sortOrder')
       .addSelect('b.name', 'teamName')
       .addSelect('b.ownerId', 'ownerId')
       .addSelect('b.memberCount', 'memberCount')
@@ -190,7 +248,7 @@ export class TeamMemberService extends BaseService {
     } else {
       qb.andWhere('a.exitType != 0');
     }
-    qb.orderBy('a.joinedAt', 'DESC');
+    qb.orderBy('a.sortOrder', 'ASC').addOrderBy('a.joinedAt', 'DESC');
 
     return await qb.getRawMany();
   }

@@ -14,6 +14,18 @@ export class LeaderboardDurationService extends BaseService {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  /** 仅正整数为团队内排行；不传 / null / 0 / 非法值均为全站 */
+  private parseTeamId(raw: any): number | null {
+    if (raw === undefined || raw === null || raw === '') {
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+      return null;
+    }
+    return Math.floor(n);
+  }
+
   private rangeStart(range: string) {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -33,7 +45,7 @@ export class LeaderboardDurationService extends BaseService {
     const page = Math.max(Number(params?.page ?? 1), 1);
     const size = Math.min(Math.max(Number(params?.size ?? 20), 1), 100);
     const range = String(params?.range ?? 'week');
-    const teamId = params?.teamId != null ? Number(params.teamId) : null;
+    const teamId = this.parseTeamId(params?.teamId);
 
     const start = this.rangeStart(range);
     const end = new Date();
@@ -62,7 +74,7 @@ export class LeaderboardDurationService extends BaseService {
         WHERE ms.status = 2 AND ms.endDate IS NOT NULL AND ms.endDate >= ? AND ms.endDate <= ?
         GROUP BY ms.userId
       ) r ON r.userId = u.id
-      WHERE u.status = 1 AND IFNULL(r.seconds, 0) > 0
+      WHERE u.status = 1
     `;
 
     const countSql = `SELECT COUNT(1) AS total FROM (SELECT u.id ${sqlBase}) t`;
@@ -83,7 +95,7 @@ export class LeaderboardDurationService extends BaseService {
         IFNULL(r.seconds, 0) AS seconds,
         r.lastMeditationTime AS lastMeditationTime
       ${sqlBase}
-      ORDER BY r.seconds DESC, r.lastMeditationTime DESC, u.id DESC
+      ORDER BY IFNULL(r.seconds, 0) DESC, IFNULL(r.lastMeditationTime, '1970-01-01') DESC, u.id DESC
       LIMIT ? OFFSET ?
     `;
     const listArgs = [...teamArgs, startStr, endStr, size, offset];

@@ -47,11 +47,15 @@ export class DeviceInfoService extends BaseService {
       throw new CoolCommException('该设备已被其他用户绑定');
     }
 
+    const wasUnboundOrOtherUser = !device.userId || device.userId !== userId;
     device.userId = userId;
     device.model = model;
     device.mac = mac;
     device.bindTime = new Date();
-    device.status = 1; // 在线/激活
+    device.status = 0 ; // 在线/激活
+    if (wasUnboundOrOtherUser) {
+      device.sortOrder = await this.nextDeviceSortOrder(userId);
+    }
 
     await this.deviceInfoEntity.save(device);
     return device;
@@ -100,11 +104,66 @@ export class DeviceInfoService extends BaseService {
     return super.update(param);
   }
 
+  /** 用户下下一档 sortOrder（新绑定设备排在末尾） */
+  async nextDeviceSortOrder(userId: number): Promise<number> {
+    const row = await this.deviceInfoEntity
+      .createQueryBuilder('d')
+      .select('COALESCE(MAX(d.sortOrder), -1)', 'mx')
+      .where('d.userId = :userId', { userId })
+      .getRawOne();
+    return Number(row?.mx ?? -1) + 1;
+  }
+
+  /**
+   * 主设备：同用户 sortOrder 最小，其次 id 最小
+   */
+  async getPrimaryDeviceSn(userId: number): Promise<string | null> {
+    const d = await this.deviceInfoEntity.findOne({
+      where: { userId },
+      order: { sortOrder: 'ASC', id: 'ASC' },
+    });
+    return d?.sn ?? null;
+  }
+
+  /**
+   * 按 SN 顺序重排当前用户设备（order[0] 为主设备）
+   */
+  async reorderDevicesForUser(userId: number, sns: string[]) {
+    if (!Array.isArray(sns) || sns.length === 0) {
+      throw new CoolCommException('请传入设备 SN 顺序列表');
+    }
+    const all = await this.deviceInfoEntity.find({ where: { userId } });
+    if (all.length !== sns.length) {
+      throw new CoolCommException('order 须包含当前用户全部已绑定设备，数量须一致');
+    }
+    const owned = new Set(all.map(d => d.sn));
+    const seen = new Set<string>();
+    for (let i = 0; i < sns.length; i++) {
+      const sn = String(sns[i] ?? '').trim();
+      if (!sn) {
+        throw new CoolCommException('SN 不能为空');
+      }
+      if (seen.has(sn)) {
+        throw new CoolCommException('SN 重复');
+      }
+      seen.add(sn);
+      if (!owned.has(sn)) {
+        throw new CoolCommException(`设备未绑定: ${sn}`);
+      }
+      const device = all.find(d => d.sn === sn)!;
+      await this.deviceInfoEntity.update(device.id, { sortOrder: i });
+    }
+    return this.listByUser(userId);
+  }
+
   /**
    * 按用户查询设备列表
    */
   async listByUser(userId: number) {
-    return this.deviceInfoEntity.find({ where: { userId } });
+    return this.deviceInfoEntity.find({
+      where: { userId },
+      order: { sortOrder: 'ASC', id: 'ASC' },
+    });
   }
 
   async getUserDeviceByMac(userId: number, mac: string) {

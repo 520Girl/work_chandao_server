@@ -35,6 +35,17 @@ export class UserCreateTeamInviteDTO {
   bindUserId?: number | null;
 }
 
+/** 我的团队列表自定义排序：teamIds 顺序即展示顺序（须均为当前在职团队） */
+export class UserReorderTeamsDTO {
+  @Rule(
+    RuleType.array()
+      .items(RuleType.number().required())
+      .required()
+      .min(1)
+  )
+  teamIds: number[];
+}
+
 /** 创建「个人成团」邀请（发起人为当前用户） */
 export class UserCreatePersonalInviteDTO {
   @Rule(RuleType.number().optional().default(7).min(1).max(365))

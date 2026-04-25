@@ -7,6 +7,7 @@ import {
   UserQuitTeamDTO,
   UserCreateTeamInviteDTO,
   UserCreatePersonalInviteDTO,
+  UserReorderTeamsDTO,
 } from '../../dto/team';
 import { Validate } from '@midwayjs/validate';
 
@@ -75,6 +76,14 @@ export class AppUserTeamController extends BaseController {
   async myTeams(@Query('status') status: number = 0) {
     return this.ok(
       await this.teamMemberService.myTeams(this.ctx.user.id, status)
+    );
+  }
+
+  @Post('/myTeams/reorder', { summary: '我的团队排序（teamIds 顺序即展示顺序）' })
+  @Validate()
+  async reorderMyTeams(@Body() body: UserReorderTeamsDTO) {
+    return this.ok(
+      await this.teamMemberService.reorderMyTeams(this.ctx.user.id, body.teamIds)
     );
   }
 }

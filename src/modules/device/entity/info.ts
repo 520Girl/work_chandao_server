@@ -31,4 +31,7 @@ export class DeviceInfoEntity extends BaseEntity {
 
   @Column({ comment: '绑定时间', nullable: true })
   bindTime: Date;
+
+  @Column({ comment: '用户内排序，越小越靠前', default: 0 })
+  sortOrder: number;
 }

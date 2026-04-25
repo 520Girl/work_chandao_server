@@ -4,8 +4,9 @@ export class LeaderboardDurationQueryDTO {
   @Rule(RuleType.string().default('week').allow('day', 'week', 'month', 'total'))
   range?: string;
 
-  @Rule(RuleType.number())
-  teamId?: number;
+  /** 不传或 null：全站；正整数：该团队在职成员（exitType=0） */
+  @Rule(RuleType.number().optional().allow(null))
+  teamId?: number | null;
 
   @Rule(RuleType.number().default(1).min(1))
   page?: number;

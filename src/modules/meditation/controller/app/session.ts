@@ -26,6 +26,11 @@ export class AppMeditationSessionController extends BaseController {
   @Inject()
   meditationSessionService: MeditationSessionService;
 
+  @Get('/session/active', { summary: '当前是否有进行中的冥想' })
+  async activeSession() {
+    return this.ok(await this.meditationSessionService.getActiveSession(this.ctx.user.id));
+  }
+
   @Post('/start', { summary: '开始冥想' })
   @Validate()
   async start(@Body() body: MeditationStartDTO) {

@@ -10,11 +10,10 @@ import { Rule, RuleType } from '@midwayjs/validate';
  */
 export class MeditationStartDTO {
   /**
-   * 设备序列号
-   * @example "DEVICE-001"
+   * 设备序列号；设备冥想（type=1）时可省略，后端使用当前用户 **sortOrder 最小** 的已绑定设备
    */
-  @Rule(RuleType.string())
-  sn: string;
+  @Rule(RuleType.string().optional().allow('', null))
+  sn?: string | null;
 
   /**
    * 目标时长（分钟）
@@ -24,12 +23,10 @@ export class MeditationStartDTO {
   targetDuration: number;
 
   /**
-   * 冥想类型
-   * 1: 设备冥想, 2: 无设备冥想
-   * @example 1
+   * 冥想类型：1 设备冥想，2 无设备冥想；不传时：有 sn 则设备冥想，否则无设备
    */
-  @Rule(RuleType.number())
-  type: number;
+  @Rule(RuleType.number().optional().valid(1, 2))
+  type?: number;
 }
 
 /**

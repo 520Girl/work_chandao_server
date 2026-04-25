@@ -25,4 +25,7 @@ export class TeamMemberEntity extends BaseEntity {
 
   @Column({ comment: '操作人ID（管理员移除时）', nullable: true })
   operatorId: number;
+
+  @Column({ comment: '用户视角下团队排序，越小越靠前', default: 0 })
+  sortOrder: number;
 }
