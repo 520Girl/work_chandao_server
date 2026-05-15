@@ -38,6 +38,7 @@ export class LeaderboardDurationService extends BaseService {
       start.setDate(now.getDate() + diff);
       return start;
     }
+    /** total 与其它未识别值：自 1970 起至当前，即全量时间窗 */
     return new Date(1970, 0, 1, 0, 0, 0);
   }
 
@@ -52,6 +53,13 @@ export class LeaderboardDurationService extends BaseService {
     const startStr = this.fmt(start);
     const endStr = this.fmt(end);
     const offset = (page - 1) * size;
+
+    /** 仅总榜 `range=total` 把 user_info.meditationExtraSeconds 计入展示与排序；日/周/月不加 */
+    const applyMeditationExtra = range === 'total';
+    const extraSql = applyMeditationExtra ? 'IFNULL(u.meditationExtraSeconds, 0)' : '0';
+    const extraSecondsSelect = applyMeditationExtra
+      ? 'IFNULL(u.meditationExtraSeconds, 0) AS extraSeconds'
+      : '0 AS extraSeconds';
 
     const teamJoin = teamId
       ? 'INNER JOIN team_member tm ON tm.userId = u.id AND tm.teamId = ? AND tm.exitType = 0'
@@ -90,12 +98,13 @@ export class LeaderboardDurationService extends BaseService {
         u.lastProvince AS lastProvince,
         u.lastCity AS lastCity,
         IFNULL(r.reportCount, 0) AS reportCount,
-        IFNULL(r.minutes, 0) AS minutes,
-        IFNULL(r.hours, 0) AS hours,
-        IFNULL(r.seconds, 0) AS seconds,
+        FLOOR((IFNULL(r.seconds, 0) + ${extraSql}) / 60) AS minutes,
+        ROUND((IFNULL(r.seconds, 0) + ${extraSql}) / 3600, 2) AS hours,
+        IFNULL(r.seconds, 0) + ${extraSql} AS seconds,
+        ${extraSecondsSelect},
         r.lastMeditationTime AS lastMeditationTime
       ${sqlBase}
-      ORDER BY IFNULL(r.seconds, 0) DESC, IFNULL(r.lastMeditationTime, '1970-01-01') DESC, u.id DESC
+      ORDER BY (IFNULL(r.seconds, 0) + ${extraSql}) DESC, IFNULL(r.lastMeditationTime, '1970-01-01') DESC, u.id DESC
       LIMIT ? OFFSET ?
     `;
     const listArgs = [...teamArgs, startStr, endStr, size, offset];

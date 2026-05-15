@@ -15,6 +15,7 @@ export class MeditationAutoEndJob {
 
   async onTick() {
     await this.meditationSessionService.autoEndExpiredDeviceSessions();
+    await this.meditationSessionService.autoEndNoDeviceReachedTargetSessions();
   }
 }
 

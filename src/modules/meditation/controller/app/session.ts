@@ -34,13 +34,14 @@ export class AppMeditationSessionController extends BaseController {
   @Post('/start', { summary: '开始冥想' })
   @Validate()
   async start(@Body() body: MeditationStartDTO) {
-    const { sn, targetDuration, type } = body;
+    const { sn, targetDuration, type, activityId } = body;
     return this.ok(
       await this.meditationSessionService.start(
         this.ctx.user.id,
         sn,
         targetDuration,
-        type
+        type,
+        activityId
       )
     );
   }
@@ -59,10 +60,15 @@ export class AppMeditationSessionController extends BaseController {
     );
   }
 
+  /**
+   * 不传 `page`/`size` 或均为空：返回全量列表（旧行为）；传 `page` 或 `size` 之一则分页（`page` 默认 1，`size` 默认 20）。
+   * 使用 Query DTO + @Validate，便于 Swagger / EPS 展示查询参数。
+   */
   @Get('/report/history', { summary: '报告历史' })
-  async reportHistory(@Query('page') pageRaw: any, @Query('size') sizeRaw: any) {
-    const page = Number(pageRaw ?? 0) || 0;
-    const size = Number(sizeRaw ?? 0) || 0;
+  @Validate()
+  async reportHistory(@Query() query: MeditationReportHistoryPageDTO) {
+    const page = Number(query?.page ?? 0) || 0;
+    const size = Number(query?.size ?? 0) || 0;
     if (page > 0 || size > 0) {
       return this.ok(
         await this.meditationSessionService.reportHistoryPage(

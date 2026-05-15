@@ -81,6 +81,7 @@ export class ActivityAutoCheckinEvent {
         .andWhere('a.status = :status', { status: 2 })
         .andWhere('(a.startDate IS NULL OR a.startDate <= :now)', { now })
         .andWhere('(a.endDate IS NULL OR a.endDate >= :now)', { now })
+        .andWhere('(a.activityType IS NULL OR a.activityType <> 2)')
         .andWhere('a.targetMeditationSeconds > 0')
         .select('p.activityId', 'activityId')
         .addSelect('p.checkins', 'checkins')

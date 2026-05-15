@@ -27,6 +27,12 @@ export class MeditationStartDTO {
    */
   @Rule(RuleType.number().optional().valid(1, 2))
   type?: number;
+
+  /**
+   * 多人共修活动 ID（可选）。传入时服务端校验：场次进行中、在锁定名单、当前在计划窗±宽限内；通过后与普通开始冥想相同，禅修时长仍写入 session/report。
+   */
+  @Rule(RuleType.number().optional())
+  activityId?: number;
 }
 
 /**
@@ -77,11 +83,13 @@ export class MeditationDataListDTO {
 }
 
 export class MeditationReportHistoryPageDTO {
-  @Rule(RuleType.number().min(1).optional())
-  page: number;
+  /** 分页页码，≥1；不传或与 size 均不传/为 0 则返回全量列表 */
+  @Rule(RuleType.number().integer().min(1).optional())
+  page?: number;
 
-  @Rule(RuleType.number().min(1).max(100).optional())
-  size: number;
+  /** 每页条数 1～100；不传则分页时默认 20 */
+  @Rule(RuleType.number().integer().min(1).max(100).optional())
+  size?: number;
 }
 
 export class MeditationReportDetailDTO {

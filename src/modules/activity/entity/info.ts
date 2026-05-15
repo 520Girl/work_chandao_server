@@ -43,4 +43,20 @@ export class ActivityInfoEntity extends BaseEntity {
 
   @Column({ comment: '打卡模式', dict: ['未知', '每日打卡', '仅一次'], default: 1 })
   checkinMode: number;
+
+  /** 1 普通打卡活动 2 多人共修 */
+  @Column({ comment: '活动类型', dict: ['普通打卡', '多人共修'], default: 1 })
+  activityType: number;
+
+  /** 共修配置：maxParticipants、roomNo、scheduledStartTime、scheduledEndTime、startMode */
+  @Column({ comment: '共修会话扩展配置', type: 'json', nullable: true })
+  sessionConfig: Record<string, any>;
+
+  /** 0 待开场 1 进行中 2 已结算 */
+  @Column({ comment: '共修场次阶段', dict: ['待开场', '进行中', '已结算'], default: 0 })
+  groupSessionPhase: number;
+
+  /** 开场瞬间锁定的参赛用户 ID 列表 */
+  @Column({ comment: '共修锁定名单', type: 'json', nullable: true })
+  lockedRosterUserIds: number[];
 }

@@ -14,6 +14,7 @@ import { BaseSysParamService } from '../../base/service/sys/param';
 import * as zlib from 'zlib';
 import { DictInfoService } from '../../dict/service/info';
 import { UserInfoEntity } from '../../user/entity/info';
+import { ActivityInfoService } from '../../activity/service/info';
 
 /**
  * 冥想会话服务
@@ -47,6 +48,9 @@ export class MeditationSessionService extends BaseService {
   @Inject()
   dictInfoService: DictInfoService;
 
+  @Inject()
+  activityInfoService: ActivityInfoService;
+
   /**
    * 当前用户是否有进行中的冥想（status=1）
    */
@@ -78,7 +82,17 @@ export class MeditationSessionService extends BaseService {
   /**
    * 开始冥想
    */
-  async start(userId: number, sn?: string, targetDuration?: number, type?: number) {
+  async start(
+    userId: number,
+    sn?: string,
+    targetDuration?: number,
+    type?: number,
+    activityId?: number
+  ) {
+    const aid = activityId != null && activityId !== undefined ? Number(activityId) : 0;
+    if (aid > 0) {
+      await this.activityInfoService.assertGroupMeditationStartAllowed(userId, aid);
+    }
     let sessionType = type != null ? Number(type) : sn ? 1 : 2;
     if (sessionType !== 1 && sessionType !== 2) {
       sessionType = sn ? 1 : 2;
@@ -163,6 +177,7 @@ export class MeditationSessionService extends BaseService {
     if (now - lastActive > timeout * 60 * 1000) {
       const endDateOverride = session.lastActiveTime ?? session.startDate;
       const effectiveMs = endDateOverride.getTime() - session.startDate.getTime();
+      // 4：开始→最后活动时间仍短于超时阈值（典型无设备/lastActive 未刷新）；2：曾满阈值后再失联
       const endReason = effectiveMs < timeout * 60 * 1000 ? 4 : 2;
       await this.end(userId, session.id, endReason, endDateOverride);
       return { status: 'ended', reason: 'timeout', endReason };
@@ -1009,8 +1024,33 @@ export class MeditationSessionService extends BaseService {
       try {
         const endDateOverride = (s as any).lastActiveTime ?? (s as any).startDate;
         const effectiveMs = endDateOverride.getTime() - (s as any).startDate.getTime();
+        // 与 poll 内超时分支一致：4=短窗/无活跃；2=已满活跃阈值后再超时
         const endReason = effectiveMs < timeout * 60 * 1000 ? 4 : 2;
         await this.end(s.userId, s.id, endReason, endDateOverride);
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * 无设备冥想：已到设定目标时长但客户端未再 poll 时，由定时任务自动 end 并生成报告（与 poll 内到时逻辑一致，endReason=3）
+   */
+  async autoEndNoDeviceReachedTargetSessions() {
+    const enabled = await this.baseSysParamService.dataByKey('MEDITATION_AUTO_END_JOB_ENABLED');
+    if (enabled === 0 || enabled === '0' || enabled === false) return;
+
+    const sessions = await this.meditationSessionEntity.find({
+      where: { status: 1, type: 2 },
+      select: ['id', 'userId', 'startDate', 'targetDuration'],
+    });
+
+    const now = Date.now();
+    for (const s of sessions) {
+      const td = Number(s.targetDuration);
+      if (!s.startDate || !Number.isFinite(td) || td <= 0) continue;
+      const elapsedSec = Math.floor((now - s.startDate.getTime()) / 1000);
+      if (elapsedSec < td * 60) continue;
+      try {
+        await this.end(s.userId, s.id, 3);
       } catch (e) {}
     }
   }

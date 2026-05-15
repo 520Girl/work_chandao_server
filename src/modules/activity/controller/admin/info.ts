@@ -5,16 +5,19 @@ import { ActivityTemplateEntity } from '../../entity/template';
 import { TeamInfoEntity } from '../../../team/entity/info';
 import { ActivityInfoService } from '../../service/info';
 import { Validate } from '@midwayjs/validate';
-import { ActivityUpdateDTO, ActivityAssignTeamDTO } from '../../dto/admin';
+import { ActivityCreateDTO, ActivityUpdateDTO, ActivityAssignTeamDTO } from '../../dto/admin';
 
 /**
  * 活动管理
  */
 @CoolController({
   prefix: '/admin/activity/info',
-  api: ['add', 'delete', 'update', 'list', 'page'],
+  // 勿包含 update：默认 CRUD update 只改表，不会走 ActivityInfoService.updateActivity（草稿→发布不发 ACTIVITY_PUBLISHED）。
+  // 统一使用下方自定义 POST /update → updateActivity。
+  api: ['delete', 'list', 'page'],
   entity: ActivityInfoEntity,
-  insertParam: ctx => ({ authorId: ctx.admin.userId, status: 1 }),
+  // 勿在此写死 status：会与请求体合并并覆盖前端选择的「发布」，导致永远存为草稿
+  insertParam: ctx => ({ authorId: ctx.admin.userId }),
   pageQueryOp: {
     keyWordLikeFields: ['a.title', 'b.name'],
     fieldEq: ['a.status', 'a.teamId'],
@@ -41,6 +44,18 @@ export class AdminActivityInfoController extends BaseController {
   @Inject()
   activityInfoService: ActivityInfoService;
 
+  @Post('/add', { summary: '新增活动（支持直接发布并触发通知）' })
+  @Validate()
+  async addActivity(@Body() body: ActivityCreateDTO) {
+    const addData: any = { ...body };
+    if (addData.startDate) addData.startDate = new Date(addData.startDate);
+    if (addData.endDate) addData.endDate = new Date(addData.endDate);
+    if (addData.isTop !== undefined) addData.isTop = addData.isTop ? 1 : 0;
+    addData.authorId = this.ctx.admin.userId;
+    const row = await this.activityInfoService.add(addData);
+    return this.ok(row);
+  }
+
   @Post('/info', { summary: '活动详情（含模板名、团队名）' })
   async activityDetail(@Body() body: any) {
     const id = body?.id ?? body;
@@ -62,7 +77,8 @@ export class AdminActivityInfoController extends BaseController {
     await this.activityInfoService.updateActivity(
       this.ctx.admin.userId,
       body.id,
-      updateData
+      updateData,
+      { skipAuthorCheck: true }
     );
     return this.ok();
   }

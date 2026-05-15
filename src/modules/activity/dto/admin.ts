@@ -71,7 +71,7 @@ export class ActivityCreateDTO {
   isTop?: number;
 
   /**
-   * 状态 1草稿 2发布
+   * 状态 1草稿 2发布（须为数字；字典/前端若传字符串 `"2"` 会导致旧逻辑误判为草稿，服务端 add 已按 Number 解析）
    * @example 1
    */
   @Rule(RuleType.number())
@@ -85,11 +85,17 @@ export class ActivityCreateDTO {
   teamId?: number | null;
 
   /**
-   * 打卡模式 1每日打卡 2仅一次
+   * 打卡模式 1每日打卡 2仅一次；多人共修 activityType=2 时后端强制为 2
    * @example 1
    */
   @Rule(RuleType.number().valid(1, 2))
   checkinMode?: number;
+
+  @Rule(RuleType.number().valid(1, 2).optional())
+  activityType?: number;
+
+  @Rule(RuleType.object().optional().allow(null))
+  sessionConfig?: Record<string, any> | null;
 }
 
 /**
@@ -203,6 +209,12 @@ export class ActivityUpdateDTO {
    */
   @Rule(RuleType.number().valid(1, 2))
   checkinMode?: number;
+
+  @Rule(RuleType.number().valid(1, 2).optional())
+  activityType?: number;
+
+  @Rule(RuleType.object().optional().allow(null))
+  sessionConfig?: Record<string, any> | null;
 }
 
 /**

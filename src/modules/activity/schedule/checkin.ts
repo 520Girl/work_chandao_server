@@ -19,3 +19,20 @@ export class ActivityCheckinJob {
     await this.activityInfoService.checkDailyCheckin();
   }
 }
+
+/**
+ * 多人共修：自动开场/结算
+ */
+@Provide()
+@Job({
+  cronTime: '0 */1 * * * *',
+  start: true,
+})
+export class ActivityGroupSessionJob {
+  @Inject()
+  activityInfoService: ActivityInfoService;
+
+  async onTick() {
+    await this.activityInfoService.runGroupSessionScheduler();
+  }
+}

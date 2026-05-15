@@ -66,6 +66,7 @@ export class LeaderboardScoreService extends BaseService {
       start.setDate(now.getDate() + diff);
       return start;
     }
+    /** total 与其它：全量时间窗 */
     return new Date(1970, 0, 1, 0, 0, 0);
   }
 
@@ -80,6 +81,16 @@ export class LeaderboardScoreService extends BaseService {
     const startStr = this.fmt(start);
     const endStr = this.fmt(end);
     const offset = (page - 1) * size;
+
+    /** 仅总榜 `range=total` 把 meditationExtraSeconds 计入分钟分与总分；日/周/月不加 */
+    const applyMeditationExtra = range === 'total';
+    const extraSql = applyMeditationExtra ? 'IFNULL(u.meditationExtraSeconds, 0)' : '0';
+    const visibilityExtraOr = applyMeditationExtra
+      ? '\n          OR IFNULL(u.meditationExtraSeconds, 0) > 0'
+      : '';
+    const extraSecondsSelect = applyMeditationExtra
+      ? 'IFNULL(u.meditationExtraSeconds, 0) AS extraSeconds'
+      : '0 AS extraSeconds';
 
     const defaultWeights = {
       w_like_ln: 5,
@@ -154,7 +165,7 @@ export class LeaderboardScoreService extends BaseService {
           OR IFNULL(pc.postCount, 0) > 0
           OR IFNULL(c.checkinsScore, 0) > 0
           OR IFNULL(r.reportCount, 0) > 0
-          OR IFNULL(r.minutes, 0) > 0
+          OR IFNULL(r.minutes, 0) > 0${visibilityExtraOr}
         )
     `;
 
@@ -178,9 +189,10 @@ export class LeaderboardScoreService extends BaseService {
         IFNULL(r.reportCount, 0) AS reportCount,
         IFNULL(r.reportCountDevice, 0) AS reportCountDevice,
         IFNULL(r.reportCountNoDevice, 0) AS reportCountNoDevice,
-        IFNULL(r.minutes, 0) AS minutes,
+        FLOOR((IFNULL(r.minutes, 0) * 60 + ${extraSql}) / 60) AS minutes,
         IFNULL(r.minutesDevice, 0) AS minutesDevice,
-        IFNULL(r.minutesNoDevice, 0) AS minutesNoDevice,
+        FLOOR((IFNULL(r.minutesNoDevice, 0) * 60 + ${extraSql}) / 60) AS minutesNoDevice,
+        ${extraSecondsSelect},
         lm.lastMeditationTime AS lastMeditationTime,
         ROUND(
           ? * IFNULL(r.reportCountDevice, 0)
@@ -189,7 +201,7 @@ export class LeaderboardScoreService extends BaseService {
         ) AS reportScore,
         ROUND(
           LEAST(IFNULL(r.minutesDevice, 0), ?) * ?
-          + LEAST(IFNULL(r.minutesNoDevice, 0), ?) * ?,
+          + LEAST(FLOOR((IFNULL(r.minutesNoDevice, 0) * 60 + ${extraSql}) / 60), ?) * ?,
           2
         ) AS minutesScore,
         ROUND(
@@ -197,7 +209,10 @@ export class LeaderboardScoreService extends BaseService {
           + ? * IFNULL(pc.postCount, 0)
           + ? * IFNULL(c.checkinsScore, 0)
           + (? * IFNULL(r.reportCountDevice, 0) + ? * IFNULL(r.reportCountNoDevice, 0))
-          + (LEAST(IFNULL(r.minutesDevice, 0), ?) * ? + LEAST(IFNULL(r.minutesNoDevice, 0), ?) * ?),
+          + (
+            LEAST(IFNULL(r.minutesDevice, 0), ?) * ?
+            + LEAST(FLOOR((IFNULL(r.minutesNoDevice, 0) * 60 + ${extraSql}) / 60), ?) * ?
+          ),
           2
         ) AS score
       ${sqlBase}

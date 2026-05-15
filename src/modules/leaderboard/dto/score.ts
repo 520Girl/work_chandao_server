@@ -6,7 +6,7 @@ export class LeaderboardScoreQueryDTO {
    * @default "week"
    * @example "week"
    */
-  @Rule(RuleType.string().default('week'))
+  @Rule(RuleType.string().default('week').allow('day', 'week', 'month', 'total'))
   range?: string;
 
   /** 不传或 null：全站；正整数：该团队在职成员 */
