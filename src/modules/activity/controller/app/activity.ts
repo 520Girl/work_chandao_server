@@ -38,13 +38,16 @@ export class AppActivityController extends BaseController {
     );
   }
 
-  @Get('/page', { summary: '活动列表（分页，与 /app/post/feed/teams 相同 teamId 语义）' })
+  @Get('/page', {
+    summary:
+      '活动列表（分页；onlyJoined=0 为团队+全局全部活动并含 isJoined，默认 onlyJoined=1 仅已报名）',
+  })
   @Validate()
   async pageGet(@Query() query: ActivityAppPageQueryDTO) {
     return this.ok(await this.activityInfoService.appPage(query));
   }
 
-  @Post('/page', { summary: '活动列表（分页，POST Body 兼容）' })
+  @Post('/page', { summary: '活动列表（分页，POST Body 兼容；参数同 GET /page）' })
   @Validate()
   async activityPage(@Body() body: ActivityAppPageQueryDTO) {
     return this.ok(await this.activityInfoService.appPage(body ?? {}));

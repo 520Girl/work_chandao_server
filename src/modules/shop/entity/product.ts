@@ -24,6 +24,10 @@ export class ShopProductEntity extends BaseEntity {
   @Column({ comment: '主图', nullable: true })
   mainImage: string;
 
+  /** 商品图 URL 列表；主图与 images[0] 保持一致 */
+  @Column({ comment: '商品图列表', type: 'json', nullable: true })
+  images: string[];
+
   @Column({ comment: '是否参与返佣', dict: ['否', '是'], default: 0 })
   isCommission: number;
 }

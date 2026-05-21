@@ -34,25 +34,50 @@ export class DeviceInfoService extends BaseService {
   deviceConfig;
 
   /**
-   * 绑定设备
+   * 绑定设备（仅需 SN；未传 mac/model 时通过 SOAP GetDeviceInfo 按 SN 拉取并落库）
    */
-  async bind(userId: number, sn: string, model: string, mac: string) {
-    let device = await this.deviceInfoEntity.findOne({ where: { sn } });
+  async bind(userId: number, sn: string, model?: string, mac?: string) {
+    const snVal = String(sn || '').trim();
+    if (!snVal) throw new CoolCommException('设备 SN 不能为空');
+
+    let resolvedMac = String(mac || '').trim();
+    let resolvedModel = String(model || '').trim();
+
+    let device = await this.deviceInfoEntity.findOne({ where: { sn: snVal } });
+
+    let cloudStatusId: number | undefined;
+    if (!resolvedMac) {
+      const profile = await this.fetchCloudDeviceProfileBySn(snVal, device?.mac);
+      resolvedMac = profile.mac;
+      if (!resolvedModel) {
+        resolvedModel = profile.model;
+      }
+      cloudStatusId = profile.statusId;
+    } else if (!resolvedModel) {
+      const profile = await this.fetchCloudDeviceProfileBySn(snVal, resolvedMac);
+      if (!resolvedModel) resolvedModel = profile.model;
+      if (profile.statusId != null) cloudStatusId = profile.statusId;
+    }
+
+    if (!resolvedModel) {
+      resolvedModel = '未知型号';
+    }
+
     if (!device) {
       device = new DeviceInfoEntity();
-      device.sn = sn;
+      device.sn = snVal;
     }
-    
+
     if (device.userId && device.userId !== userId) {
       throw new CoolCommException('该设备已被其他用户绑定');
     }
 
     const wasUnboundOrOtherUser = !device.userId || device.userId !== userId;
     device.userId = userId;
-    device.model = model;
-    device.mac = mac;
+    device.model = resolvedModel;
+    device.mac = resolvedMac;
     device.bindTime = new Date();
-    device.status = 0 ; // 在线/激活
+    device.status = cloudStatusId != null && Number.isFinite(cloudStatusId) ? cloudStatusId : 0;
     if (wasUnboundOrOtherUser) {
       device.sortOrder = await this.nextDeviceSortOrder(userId);
     }
@@ -192,11 +217,83 @@ export class DeviceInfoService extends BaseService {
 
   /**
    * 获取设备信息（SOAP）
+   * @param macOrSn 文档字段名 mac；可传真实 MAC，也可传设备 SN
    */
-  async getDeviceInfo(mac: string) {
+  async getDeviceInfo(macOrSn: string) {
     const key = this.deviceConfig.secretKey;
+    const mac = String(macOrSn || '').trim();
+    if (!mac) throw new CoolCommException('设备 MAC/SN 不能为空');
     const result = await this.deviceSoapService.call('GetDeviceInfo', { key, mac });
     return result;
+  }
+
+  /**
+   * 仅凭 SN 绑定时：按文档将 SN 填入 GetDeviceInfo 的 mac 参数（勿使用独立 sn 字段）。
+   * 若本地已有 MAC 且按 SN 查询失败，再回退用 MAC 查询一次。
+   */
+  private async fetchCloudDeviceProfileBySn(
+    snVal: string,
+    knownMac?: string | null
+  ): Promise<{ mac: string; model: string; statusId?: number }> {
+    const fallbackMac = String(knownMac || '').trim();
+    const queries =
+      fallbackMac && fallbackMac !== snVal ? [snVal, fallbackMac] : [snVal];
+
+    let lastError: CoolCommException | undefined;
+    for (const queryMac of queries) {
+      const result = await this.getDeviceInfo(queryMac);
+      try {
+        this.assertCloudOk(result, '获取设备信息失败');
+        return this.parseCloudDeviceProfile(result, snVal);
+      } catch (e) {
+        if (!(e instanceof CoolCommException)) throw e;
+        lastError = e;
+        if (queries.length === 1) throw e;
+      }
+    }
+    throw lastError ?? new CoolCommException('获取设备信息失败');
+  }
+
+  private parseCloudDeviceProfile(
+    result: any,
+    snVal: string
+  ): { mac: string; model: string; statusId?: number } {
+    const data = result?.data ?? result;
+    const cloudSn = String(data?.sn || '').trim();
+    if (cloudSn && cloudSn !== snVal) {
+      throw new CoolCommException(
+        `设备 SN 与云端不一致（请求 SN：${snVal}，云端：${cloudSn}）`
+      );
+    }
+
+    const mac = String(data?.mac || '').trim();
+    if (!mac) {
+      throw new CoolCommException('云端未返回设备 MAC');
+    }
+
+    let statusId: number | undefined;
+    if (data?.status?.id != null && data.status.id !== '') {
+      const sid = Number(data.status.id);
+      if (Number.isFinite(sid)) statusId = sid;
+    }
+
+    return {
+      mac,
+      model: String(data?.model || '').trim() || '未知型号',
+      statusId,
+    };
+  }
+
+  private assertCloudOk(result: any, fallback: string) {
+    if (result?.ret != null && Number(result.ret) !== 0) {
+      const msg = String(result?.msg || fallback).trim();
+      const code = result?.err_code != null ? `（err_code=${result.err_code}）` : '';
+      throw new CoolCommException(`${msg}${code}`);
+    }
+    if (result?.err_code != null && Number(result.err_code) !== 0) {
+      const msg = String(result?.msg || fallback).trim();
+      throw new CoolCommException(`${msg}（err_code=${result.err_code}）`);
+    }
   }
 
   async refreshDeviceStatusFromCloud(mac: string) {

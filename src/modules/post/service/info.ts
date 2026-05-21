@@ -626,7 +626,7 @@ export class PostInfoService extends BaseService {
               FROM activity_participation apu
               WHERE apu.activityId = a.id
                 AND apu.userId = ?
-                AND apu.status <> 3
+                AND (apu.status IS NULL OR apu.status <> 2)
             ),
             1,
             0
@@ -649,7 +649,7 @@ export class PostInfoService extends BaseService {
             ) AS participantNames
           FROM activity_participation ap
           LEFT JOIN user_info u ON ap.userId = u.id
-          WHERE ap.status <> 3
+          WHERE (ap.status IS NULL OR ap.status <> 2)
           GROUP BY ap.activityId
         ) pa ON pa.activityId = a.id
         WHERE a.status = 2

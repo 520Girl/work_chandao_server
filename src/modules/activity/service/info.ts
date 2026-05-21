@@ -608,10 +608,11 @@ export class ActivityInfoService extends BaseService {
 
   /**
    * App 端活动列表（仅发布状态 + 团队可见性，与 /app/post/feed/teams 对齐）
-   * - 仅返回 **当前用户已报名**（activity_participation 有记录）的活动
-   * - 未传 teamId：全局活动 + 用户可访问团队下的团队活动（可访问团队 ID 算法与动态流一致）
-   * - 传 teamId：全局活动（teamId 为空）+ 该团队活动；须为可访问团队，否则抛错
-   * - `includeExpired=1`：包含已过结束时间的活动；默认不含过期项；每项带 `isExpired` 便于前端样式区分
+   * - `onlyJoined=1`（默认）：仅当前用户已报名（非已拒绝）的活动
+   * - `onlyJoined=0`：可见范围内全部已发布活动，并返回 isJoined、participantCount
+   * - 未传 teamId：全局活动 + 用户可访问团队下的团队活动
+   * - 传 teamId：全局活动 + 该团队活动；须为可访问团队，否则抛错
+   * - `includeExpired=1`：包含已过结束时间的活动；默认不含过期项；每项带 `isExpired`
    */
   async appPage(query: any) {
     const page = Math.max(Number(query?.page ?? 1), 1);
@@ -623,6 +624,9 @@ export class ActivityInfoService extends BaseService {
 
     const includeExpired =
       Number(query?.includeExpired) === 1 || query?.includeExpired === true;
+
+    const onlyJoined =
+      Number(query?.onlyJoined) !== 0 && query?.onlyJoined !== false;
 
     const tidRaw = query?.teamId;
     const tid = tidRaw != null && tidRaw !== '' ? Number(tidRaw) : NaN;
@@ -641,14 +645,17 @@ export class ActivityInfoService extends BaseService {
       .createQueryBuilder('a')
       .leftJoin('activity_template', 'b', 'a.templateId = b.id')
       .where('a.status = :status', { status: 2 })
-      .andWhere(
+      .setParameter('participantUserId', userId);
+
+    if (onlyJoined) {
+      qb.andWhere(
         `EXISTS (
           SELECT 1 FROM activity_participation p
           WHERE p.activityId = a.id AND p.userId = :participantUserId
             AND (p.status IS NULL OR p.status <> 2)
-        )`,
-        { participantUserId: userId }
+        )`
       );
+    }
 
     if (!includeExpired) {
       qb.andWhere('(a.endDate IS NULL OR a.endDate >= :now)', { now: new Date() });
@@ -664,6 +671,15 @@ export class ActivityInfoService extends BaseService {
         teamIds.length > 0 ? { teamIds } : {}
       );
     }
+
+    const joinedSql = `(
+      SELECT CASE WHEN EXISTS(
+        SELECT 1 FROM activity_participation apj
+        WHERE apj.activityId = a.id AND apj.userId = :participantUserId
+          AND (apj.status IS NULL OR apj.status <> 2)
+      ) THEN 1 ELSE 0 END
+    )`;
+
     qb.select('a.id', 'id')
       .addSelect('a.title', 'title')
       .addSelect('a.startDate', 'startDate')
@@ -680,8 +696,17 @@ export class ActivityInfoService extends BaseService {
       .addSelect('a.passPercent', 'passPercent')
       .addSelect('b.name', 'templateName')
       .addSelect('b.icon', 'templateIcon')
+      .addSelect(joinedSql, 'isJoined')
+      .addSelect(
+        `(
+          SELECT COUNT(1) FROM activity_participation apc
+          WHERE apc.activityId = a.id AND (apc.status IS NULL OR apc.status <> 2)
+        )`,
+        'participantCount'
+      )
       .orderBy('a.isTop', 'DESC')
       .addOrderBy('a.createTime', 'DESC');
+
     const total = await qb.getCount();
     const rawList = await qb
       .offset((page - 1) * size)
@@ -692,7 +717,12 @@ export class ActivityInfoService extends BaseService {
       const end = row?.endDate ? new Date(row.endDate) : null;
       const isExpired =
         !!(end && !Number.isNaN(end.getTime()) && end.getTime() < nowMs);
-      return { ...row, isExpired };
+      return {
+        ...row,
+        isExpired,
+        isJoined: onlyJoined ? true : Number(row?.isJoined ?? 0) === 1,
+        participantCount: Number(row?.participantCount ?? 0),
+      };
     });
     return { list, pagination: { page: Number(page), size: Number(size), total } };
   }

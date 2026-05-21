@@ -1,5 +1,5 @@
 import { Body, Get, Inject, Post, Query } from '@midwayjs/core';
-import { BaseController, CoolController } from '@cool-midway/core';
+import { BaseController, CoolController, CoolTag, TagTypes } from '@cool-midway/core';
 import { MeditationSessionService } from '../../service/session';
 import {
   MeditationStartDTO,
@@ -8,6 +8,8 @@ import {
   MeditationDataListDTO,
   MeditationReportHistoryPageDTO,
   MeditationReportDetailDTO,
+  MeditationReportShareTokenDTO,
+  MeditationReportShareDTO,
   MeditationReportStatisticsDTO,
 } from '../../dto/session';
 import { Validate } from '@midwayjs/validate';
@@ -81,7 +83,7 @@ export class AppMeditationSessionController extends BaseController {
     return this.ok(await this.meditationSessionService.reportHistory(this.ctx.user.id));
   }
 
-  @Get('/report/detail', { summary: '某次冥想报告详情' })
+  @Get('/report/detail', { summary: '某次冥想报告详情（本人，需登录）' })
   @Validate()
   async reportDetail(@Query() query: MeditationReportDetailDTO) {
     return this.ok(
@@ -90,6 +92,25 @@ export class AppMeditationSessionController extends BaseController {
         query.sessionId
       )
     );
+  }
+
+  @Post('/report/shareToken', { summary: '生成冥想报告分享令牌（本人，需登录）' })
+  @Validate()
+  async reportShareToken(@Body() body: MeditationReportShareTokenDTO) {
+    return this.ok(
+      await this.meditationSessionService.issueReportShareToken(
+        this.ctx.user.id,
+        body.sessionId,
+        body.refresh === true
+      )
+    );
+  }
+
+  @CoolTag(TagTypes.IGNORE_TOKEN)
+  @Get('/report/share', { summary: '分享页冥想报告详情（免登录，凭 shareToken）' })
+  @Validate()
+  async reportShare(@Query() query: MeditationReportShareDTO) {
+    return this.ok(await this.meditationSessionService.reportDetailByShareToken(query.token));
   }
 
   @Get('/report/statistics', { summary: '冥想统计对比数据' })

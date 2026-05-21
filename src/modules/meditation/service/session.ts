@@ -15,6 +15,7 @@ import * as zlib from 'zlib';
 import { DictInfoService } from '../../dict/service/info';
 import { UserInfoEntity } from '../../user/entity/info';
 import { ActivityInfoService } from '../../activity/service/info';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * 冥想会话服务
@@ -473,29 +474,139 @@ export class MeditationSessionService extends BaseService {
     };
   }
 
+  private reportDetailSelectFields(): string[] {
+    return [
+      'a.*',
+      'b.sn',
+      'b.userId as ownerUserId',
+      'b.type as sessionType',
+      'b.startDate',
+      'b.endDate',
+      'b.targetDuration',
+      'b.endReason',
+    ];
+  }
+
+  private async fetchReportDetailRow(sessionId: number, userId?: number) {
+    const sid = Number(sessionId);
+    if (!sid) return null;
+    const qb = this.meditationReportEntity
+      .createQueryBuilder('a')
+      .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
+      .andWhere('a.sessionId = :sessionId', { sessionId: sid });
+    if (userId != null) {
+      qb.andWhere('b.userId = :userId', { userId });
+    }
+    return qb.select(this.reportDetailSelectFields()).getRawOne();
+  }
+
   async reportDetail(userId: number, sessionId: number) {
     const rules = await this.getMeditationReportLevelRules();
     const sid = Number(sessionId);
     if (!sid) throw new CoolCommException('sessionId 不合法');
 
-    const row: any = await this.meditationReportEntity
-      .createQueryBuilder('a')
-      .leftJoin(MeditationSessionEntity, 'b', 'a.sessionId = b.id')
-      .where('b.userId = :userId', { userId })
-      .andWhere('a.sessionId = :sessionId', { sessionId: sid })
-      .select([
-        'a.*',
-        'b.sn',
-        'b.type as sessionType',
-        'b.startDate',
-        'b.endDate',
-        'b.targetDuration',
-        'b.endReason',
-      ])
-      .getRawOne();
-
+    const row: any = await this.fetchReportDetailRow(sid, userId);
     if (!row) return null;
-    return this.normalizeReportHistoryRow(row, rules, true);
+
+    if (row?.ownerUserId !== undefined) delete row.ownerUserId;
+
+    const normalized = this.normalizeReportHistoryRow(row, rules, true);
+    const endDate = normalized?.endDate ? new Date(normalized.endDate) : new Date();
+    const liveTotals = await this.calcUserTotals(userId, endDate);
+    const u = await this.userInfoEntity.findOne({
+      where: { id: userId },
+      select: ['meditationExtraSeconds'],
+    });
+    const meditationExtraSeconds = Math.max(
+      0,
+      Math.floor(Number(u?.meditationExtraSeconds ?? 0) || 0)
+    );
+    return {
+      ...normalized,
+      totalDays: liveTotals.totalDays,
+      totalHours: liveTotals.totalHours,
+      consecutiveDays: liveTotals.consecutiveDays,
+      meditationExtraSeconds,
+    };
+  }
+
+  /**
+   * 为本人会话生成/返回分享令牌（写入 meditation_report.shareToken）
+   */
+  async issueReportShareToken(userId: number, sessionId: number, refresh = false) {
+    const sid = Number(sessionId);
+    if (!sid) throw new CoolCommException('sessionId 不合法');
+
+    const session = await this.meditationSessionEntity.findOneBy({ id: sid, userId });
+    if (!session) {
+      throw new CoolCommException('会话不存在或无权操作');
+    }
+
+    const report = await this.meditationReportEntity.findOneBy({ sessionId: sid });
+    if (!report) {
+      throw new CoolCommException('报告尚未生成，请先结束冥想');
+    }
+
+    let token = String(report.shareToken || '').trim();
+    if (!token || refresh) {
+      token = uuidv4().replace(/-/g, '');
+      await this.meditationReportEntity.update({ id: report.id }, { shareToken: token });
+    }
+
+    return {
+      shareToken: token,
+      sessionId: sid,
+      reportId: report.id,
+    };
+  }
+
+  /**
+   * 分享页报告详情（免登录）；累计天数等为报告生成时快照，不含 meditationExtraSeconds
+   */
+  async reportDetailByShareToken(shareToken: string) {
+    const token = String(shareToken || '').trim();
+    if (!token) {
+      throw new CoolCommException('分享令牌无效');
+    }
+
+    const report = await this.meditationReportEntity.findOneBy({ shareToken: token });
+    if (!report) {
+      throw new CoolCommException('分享链接无效或已失效');
+    }
+
+    const rules = await this.getMeditationReportLevelRules();
+    const row: any = await this.fetchReportDetailRow(report.sessionId);
+    if (!row) {
+      throw new CoolCommException('分享内容不存在');
+    }
+
+    const ownerUserId = Number(row?.ownerUserId ?? 0);
+    if (row?.ownerUserId !== undefined) delete row.ownerUserId;
+
+    const normalized = this.normalizeReportHistoryRow(row, rules, true);
+    const owner = ownerUserId
+      ? await this.userInfoEntity.findOne({
+          where: { id: ownerUserId },
+          select: ['nickName', 'avatarUrl'],
+        })
+      : null;
+
+    return this.toPublicSharedReport(normalized, owner);
+  }
+
+  private toPublicSharedReport(
+    normalized: any,
+    owner?: Pick<UserInfoEntity, 'nickName' | 'avatarUrl'> | null
+  ) {
+    const out = { ...normalized };
+    delete out.sn;
+    return {
+      ...out,
+      sharer: {
+        nickName: owner?.nickName || '禅友',
+        avatarUrl: owner?.avatarUrl || null,
+      },
+    };
   }
 
   private normalizeReportHistoryRow(row: any, rules?: any, includeAnalysisDetails = true) {
@@ -597,7 +708,8 @@ export class MeditationSessionService extends BaseService {
   private pickRule(rules: any[], value: number) {
     if (!Array.isArray(rules) || rules.length === 0) return null;
     const v = Number(value);
-    if (!Number.isFinite(v) || v <= 0) return null;
+    /** 体动为 0 时 movementPerMinute=0，仍需匹配稳定度档位（勿因 <=0 直接返回 null） */
+    if (!Number.isFinite(v) || v < 0) return null;
     for (const r of rules) {
       const minOk = r.min == null || v >= r.min;
       const maxOk = r.max == null || v <= r.max;
@@ -933,22 +1045,66 @@ export class MeditationSessionService extends BaseService {
     return new Date(String(s).replace(' ', 'T'));
   }
 
-  /** 7 等分时间桶的横轴文案：周=星期，日=桶起点时分，月=月/日 */
-  private bucketAxisLabel(index: number, normalizedRange: string, segmentStartStr: string) {
-    const d = this.parseSqlDateTime(segmentStartStr);
+  /** 7 等分时间桶的横轴文案：周=星期，日=桶起点时分，月=当月日期区间（如 1~5、6~9，仅展示用） */
+  private bucketAxisLabel(
+    index: number,
+    normalizedRange: string,
+    segmentStartStr: string,
+    segmentEndStr: string
+  ) {
+    const segStart = this.parseSqlDateTime(segmentStartStr);
     if (normalizedRange === 'week') {
       const w = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-      return w[d.getDay()] ?? `段${index + 1}`;
+      return w[segStart.getDay()] ?? `段${index + 1}`;
     }
     if (normalizedRange === 'day') {
       const pad = (n: number) => String(n).padStart(2, '0');
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(segStart.getHours())}:${pad(segStart.getMinutes())}`;
     }
+    if (normalizedRange === 'month') {
+      const segEnd = this.parseSqlDateTime(segmentEndStr);
+      const endInclusive = new Date(Math.max(segStart.getTime(), segEnd.getTime() - 1000));
+      const startDay = segStart.getDate();
+      const endDay = endInclusive.getDate();
+      if (startDay === endDay) return String(startDay);
+      return `${startDay}~${endDay}`;
+    }
+    const d = segStart;
     return `${d.getMonth() + 1}/${d.getDate()}`;
   }
 
   /**
-   * 将 [rangeStart, rangeEnd) 等分为 7 段，分别聚合冥想时长等指标（保证图表与 trend 恒为 7 点）
+   * 月视图：按自然日切成 7 段（如 1~5、6~9），段与段日期不重叠、不共用同一天
+   */
+  private buildMonthCalendarDayBuckets(rangeStartStr: string, rangeEndStr: string) {
+    const monthStart = this.parseSqlDateTime(rangeStartStr);
+    const year = monthStart.getFullYear();
+    const month = monthStart.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const bucketCount = 7;
+    const baseSize = Math.floor(daysInMonth / bucketCount);
+    const remainder = daysInMonth % bucketCount;
+    const segments: { index: number; label: string; rangeStart: string; rangeEnd: string }[] = [];
+    let day = 1;
+    for (let i = 0; i < bucketCount; i++) {
+      const size = baseSize + (i < remainder ? 1 : 0);
+      const startDay = day;
+      const endDay = day + size - 1;
+      const segStart = new Date(year, month, startDay, 0, 0, 0, 0);
+      const segEnd = new Date(year, month, endDay + 1, 0, 0, 0, 0);
+      segments.push({
+        index: i,
+        label: startDay === endDay ? String(startDay) : `${startDay}~${endDay}`,
+        rangeStart: this.formatDateTime(segStart),
+        rangeEnd: this.formatDateTime(segEnd),
+      });
+      day = endDay + 1;
+    }
+    return segments;
+  }
+
+  /**
+   * 将 [rangeStart, rangeEnd) 等分为 7 段（日/周），或按月自然日 7 段；分别聚合冥想指标
    */
   private async querySevenBuckets(
     userId: number,
@@ -956,6 +1112,31 @@ export class MeditationSessionService extends BaseService {
     rangeEndStr: string,
     normalizedRange: string
   ) {
+    const mapStats = async (seg: {
+      index: number;
+      label: string;
+      rangeStart: string;
+      rangeEnd: string;
+    }) => {
+      const stats = await this.aggregatePeriod(userId, seg.rangeStart, seg.rangeEnd);
+      return {
+        index: seg.index,
+        label: seg.label,
+        rangeStart: seg.rangeStart,
+        rangeEnd: seg.rangeEnd,
+        totalDurationMinutes: stats.totalDurationMinutes,
+        sessionCount: stats.sessionCount,
+        avgHeartRate: stats.avgHeartRate,
+        avgBreathRate: stats.avgBreathRate,
+        movementCount: stats.movementCount,
+      };
+    };
+
+    if (normalizedRange === 'month') {
+      const segments = this.buildMonthCalendarDayBuckets(rangeStartStr, rangeEndStr);
+      return Promise.all(segments.map(seg => mapStats(seg)));
+    }
+
     const start = this.parseSqlDateTime(rangeStartStr);
     const end = this.parseSqlDateTime(rangeEndStr);
     const totalMs = end.getTime() - start.getTime();
@@ -984,17 +1165,12 @@ export class MeditationSessionService extends BaseService {
       const startStr = this.formatDateTime(segStart);
       const endStr = this.formatDateTime(segEnd);
       tasks.push(
-        this.aggregatePeriod(userId, startStr, endStr).then(stats => ({
+        mapStats({
           index: i,
-          label: this.bucketAxisLabel(i, normalizedRange, startStr),
+          label: this.bucketAxisLabel(i, normalizedRange, startStr, endStr),
           rangeStart: startStr,
           rangeEnd: endStr,
-          totalDurationMinutes: stats.totalDurationMinutes,
-          sessionCount: stats.sessionCount,
-          avgHeartRate: stats.avgHeartRate,
-          avgBreathRate: stats.avgBreathRate,
-          movementCount: stats.movementCount,
-        }))
+        })
       );
     }
     return Promise.all(tasks);

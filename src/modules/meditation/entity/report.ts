@@ -69,4 +69,8 @@ export class MeditationReportEntity extends BaseEntity {
 
   @Column({ comment: '获得成就', type: 'json', nullable: true })
   achievements: string[];
+
+  @Index({ unique: true })
+  @Column({ comment: '分享令牌（免登录查看）', length: 64, nullable: true })
+  shareToken: string;
 }

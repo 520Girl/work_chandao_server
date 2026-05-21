@@ -22,6 +22,13 @@ export class ActivityAppPageQueryDTO {
    */
   @Rule(RuleType.number().valid(0, 1).optional())
   includeExpired?: number;
+
+  /**
+   * `1`（默认）：仅返回当前用户已报名的活动（与旧版一致）。
+   * `0`：返回可见范围内全部已发布活动，并返回 `isJoined`、`participantCount`。
+   */
+  @Rule(RuleType.number().valid(0, 1).optional())
+  onlyJoined?: number;
 }
 
 /**

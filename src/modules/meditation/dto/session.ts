@@ -97,6 +97,30 @@ export class MeditationReportDetailDTO {
   sessionId: number;
 }
 
+/**
+ * 生成冥想报告分享令牌（本人）
+ * @example { "sessionId": 123 }
+ */
+export class MeditationReportShareTokenDTO {
+  /** 会话 ID（须已结束并生成报告） */
+  @Rule(RuleType.number().required())
+  sessionId: number;
+
+  /** 为 true 时重新生成令牌（旧分享链接失效） */
+  @Rule(RuleType.boolean().optional())
+  refresh?: boolean;
+}
+
+/**
+ * 分享页查看冥想报告（免登录）
+ * @example { "token": "a1b2c3d4e5f6789012345678901234ab" }
+ */
+export class MeditationReportShareDTO {
+  /** 分享令牌，由 POST /app/meditation/report/shareToken 返回 */
+  @Rule(RuleType.string().required().min(16).max(64))
+  token: string;
+}
+
 export class MeditationReportStatisticsDTO {
   @Rule(RuleType.string().valid('day', 'week', 'month').default('week'))
   range: string;
